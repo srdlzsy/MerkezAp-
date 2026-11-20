@@ -4,6 +4,8 @@ using FurpaMerkezApi.Application.Modules.AyarIslemleri.Ayarlar;
 using FurpaMerkezApi.Application.Modules.AyarIslemleri.Soforler;
 using FurpaMerkezApi.Application.Modules.AyarIslemleri.TerminalCihazlari;
 using FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme;
+using FurpaMerkezApi.Application.Modules.AyarIslemleri.YeniKasaYonetimi.Interfaces;
+using FurpaMerkezApi.Infrastructure.Modules.AyarIslemleri.YeniKasaYonetimi;
 using FurpaMerkezApi.Application.Modules.AramaIslemleri.ProductCustomerSuggestions;
 using FurpaMerkezApi.Application.Modules.AramaIslemleri.ProductLatestTag;
 using FurpaMerkezApi.Application.Modules.AramaIslemleri.ProductAvailability;
@@ -813,6 +815,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IProductDistributionService, ProductDistributionService>();
         services.AddScoped<OperationsFileGenerationService>();
         services.AddScoped<ISuggestedWarehouseSourceProductsUseCase, SuggestedWarehouseSourceProductsUseCase>();
+        services.AddScoped<IYeniKasaYonetimiService, YeniKasaYonetimiService>();
 
         return services;
     }

@@ -29,6 +29,7 @@ public sealed class CompanyOrderDetailQueryExecutor(MikroDbContext mikroDbContex
         }
 
         var documentSerie = request.DocumentSerie.Trim();
+        var rawDocumentSerie = request.DocumentSerie;
         var orderType = direction == CompanyOrderListDirection.Issued ? (byte)1 : (byte)0;
 
         var rows = await (
@@ -36,7 +37,9 @@ public sealed class CompanyOrderDetailQueryExecutor(MikroDbContext mikroDbContex
             where order.sip_depono == request.WarehouseNo &&
                   order.sip_cins == 0 &&
                   order.sip_tip == orderType &&
-                  order.sip_evrakno_seri == documentSerie &&
+                  (order.sip_evrakno_seri == documentSerie ||
+                   order.sip_evrakno_seri == rawDocumentSerie ||
+                   (order.sip_evrakno_seri != null && order.sip_evrakno_seri.Trim() == documentSerie)) &&
                   order.sip_evrakno_sira == request.DocumentOrderNo
             join warehouse in mikroDbContext.DEPOLARs.AsNoTracking() on order.sip_depono equals warehouse.dep_no into warehouseGroup
             from warehouse in warehouseGroup.DefaultIfEmpty()

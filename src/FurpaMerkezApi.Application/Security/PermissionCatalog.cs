@@ -298,6 +298,7 @@ public static class PermissionCatalog
         ..CreateMenuPermissions("ayar-islemleri", "AyarIslemleri", "b2b-ayarlari", "B2BAyarlari", ManageCrudDeleteActions),
         ..CreateMenuPermissions("ayar-islemleri", "AyarIslemleri", "veritabani-izleme", "VeritabaniIzleme", DatabaseMonitoringActions),
         ..CreateMenuPermissions("ayar-islemleri", "AyarIslemleri", "terminal-cihazlari", "TerminalCihazlari", TerminalInstallationActions),
+        ..CreateMenuPermissions("ayar-islemleri", "AyarIslemleri", "yeni-kasa-yonetimi", "YeniKasaYonetimi", ReadCreateUpdateDeleteActions),
 
         ..CreateMenuPermissions("siparis-islemleri", "SiparisIslemleri", "alinan-depo-siparisleri", "AlinanDepoSiparisleri", CrudPrintActions),
         ..CreateMenuPermissions("siparis-islemleri", "SiparisIslemleri", "verilen-depo-siparisleri", "VerilenDepoSiparisleri"),

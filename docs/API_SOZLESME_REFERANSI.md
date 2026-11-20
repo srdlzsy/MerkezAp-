@@ -7,7 +7,7 @@ Kapsam: kayitli HTTP method/route ve alias'lar, binding kaynagi, request alanlar
 
 `bildirilmemis` response tipi, runtime cevabinin bos oldugu anlamina gelmez. Anonim endpointler konfigurasyon/ag/servis kontrollerine tabi olabilir. JWT fallback policy, acik Authorize olmasa da uygulanir.
 
-Endpoint sayisi (method + route): 834. Model sayisi: 815.
+Endpoint sayisi (method + route): 862. Model sayisi: 847.
 
 Bunlara ek olarak EndpointDataSource uzerinden dogrulanan iki health route'u vardir: `/health/live`, `/health/ready`. Bu middleware route'larinda method kisiti yoktur; istemci GET kullanmalidir. Anonimdir, JSON dondurur; Healthy/Degraded=200, Unhealthy=503. `live` yalniz prosesi, `ready` core_dependencies, operations_export_path ve background_workers kontrollerini olcer. Alanlar: status (string), durationMilliseconds (number), checks (ad -> status/durationMilliseconds/description/data). Tum runtime route'lari envanterde yer alir; yeni ve ApiExplorer disinda kalan route eklenirse test basarisiz olur.
 
@@ -93,6 +93,34 @@ Ozel response'lar: `/` Hosting:ExposeDiagnosticsOnRoot=false iken yalniz service
 | GET | `/api/ayar-islemleri/veritabani-izleme/oturumlar/{sessionId}/rollback-durumu` | JWT + ayar-islemleri.veritabani-izleme.detail | path: sessionId / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: DatabaseRollbackStatusDto |
 | POST | `/api/ayar-islemleri/veritabani-izleme/oturumlar/{sessionId}/sonlandir` | JWT + ayar-islemleri.veritabani-izleme.terminate-session | path: sessionId / integer (int32) (zorunlu)<br>body: request / TerminateDatabaseSessionHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: DatabaseSessionTerminationDto<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | GET | `/api/ayar-islemleri/veritabani-izleme/workerlar` | JWT + ayar-islemleri.veritabani-izleme.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: WorkerMonitoringSnapshotDto |
+| GET | `/api/ayar-islemleri/yeni-kasa-yonetimi/genel-ayarlar` | JWT + ayar-islemleri.yeni-kasa-yonetimi.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: YeniKasaAppSettingsDto |
+| PUT | `/api/ayar-islemleri/yeni-kasa-yonetimi/genel-ayarlar` | JWT + ayar-islemleri.yeni-kasa-yonetimi.update | body: request / UpdateYeniKasaAppSettingsRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>204: bildirilmemis |
+| POST | `/api/ayar-islemleri/yeni-kasa-yonetimi/genel-ayarlar/test-ftp` | JWT + ayar-islemleri.yeni-kasa-yonetimi.update | body: request / TestFtpConnectionRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: TestFtpConnectionResultDto |
+| GET | `/api/ayar-islemleri/yeni-kasa-yonetimi/hizli-tus/kategoriler` | JWT + ayar-islemleri.yeni-kasa-yonetimi.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyList&lt;YeniKasaFastAccessCategoryDto&gt; |
+| POST | `/api/ayar-islemleri/yeni-kasa-yonetimi/hizli-tus/kategoriler` | JWT + ayar-islemleri.yeni-kasa-yonetimi.create | body: request / CreateFastAccessCategoryRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>201: YeniKasaFastAccessCategoryDto |
+| PUT | `/api/ayar-islemleri/yeni-kasa-yonetimi/hizli-tus/kategoriler` | JWT + ayar-islemleri.yeni-kasa-yonetimi.update | body: request / UpdateFastAccessCategoryRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>204: bildirilmemis |
+| DELETE | `/api/ayar-islemleri/yeni-kasa-yonetimi/hizli-tus/kategoriler/{id}` | JWT + ayar-islemleri.yeni-kasa-yonetimi.delete | path: id / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>204: bildirilmemis |
+| POST | `/api/ayar-islemleri/yeni-kasa-yonetimi/hizli-tus/urunler` | JWT + ayar-islemleri.yeni-kasa-yonetimi.create | body: request / CreateFastAccessItemRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>201: YeniKasaFastAccessItemDto |
+| GET | `/api/ayar-islemleri/yeni-kasa-yonetimi/hizli-tus/urunler/{categoryKey}` | JWT + ayar-islemleri.yeni-kasa-yonetimi.list | path: categoryKey / string (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyList&lt;YeniKasaFastAccessItemDto&gt; |
+| DELETE | `/api/ayar-islemleri/yeni-kasa-yonetimi/hizli-tus/urunler/{id}` | JWT + ayar-islemleri.yeni-kasa-yonetimi.delete | path: id / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>204: bildirilmemis |
+| GET | `/api/ayar-islemleri/yeni-kasa-yonetimi/musteri-ekrani/ayarlar` | JWT + ayar-islemleri.yeni-kasa-yonetimi.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyList&lt;YeniKasaDisplaySettingsDto&gt; |
+| PUT | `/api/ayar-islemleri/yeni-kasa-yonetimi/musteri-ekrani/ayarlar` | JWT + ayar-islemleri.yeni-kasa-yonetimi.update | body: request / UpdateYeniKasaDisplaySettingsRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>204: bildirilmemis |
+| GET | `/api/ayar-islemleri/yeni-kasa-yonetimi/musteri-ekrani/icerikler` | JWT + ayar-islemleri.yeni-kasa-yonetimi.list | query: pageType / string | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyList&lt;YeniKasaDisplayContentDto&gt; |
+| POST | `/api/ayar-islemleri/yeni-kasa-yonetimi/musteri-ekrani/icerikler` | JWT + ayar-islemleri.yeni-kasa-yonetimi.create | body: request / CreateYeniKasaDisplayContentRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>201: YeniKasaDisplayContentDto |
+| DELETE | `/api/ayar-islemleri/yeni-kasa-yonetimi/musteri-ekrani/icerikler/{id}` | JWT + ayar-islemleri.yeni-kasa-yonetimi.delete | path: id / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>204: bildirilmemis |
+| PUT | `/api/ayar-islemleri/yeni-kasa-yonetimi/musteri-ekrani/siralama` | JWT + ayar-islemleri.yeni-kasa-yonetimi.update | body: request / UpdateDisplayContentsOrderRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>204: bildirilmemis |
+| GET | `/api/ayar-islemleri/yeni-kasa-yonetimi/musteri-gorsel/{fileName}` | Anonim | path: fileName / string (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: bildirilmemis<br>404: ProblemDetails |
+| GET | `/api/ayar-islemleri/yeni-kasa-yonetimi/odeme-yontemleri` | JWT + ayar-islemleri.yeni-kasa-yonetimi.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyList&lt;YeniKasaPaymentMethodDto&gt; |
+| PUT | `/api/ayar-islemleri/yeni-kasa-yonetimi/odeme-yontemleri` | JWT + ayar-islemleri.yeni-kasa-yonetimi.update | body: request / UpdateYeniKasaPaymentMethodRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>204: bildirilmemis |
+| GET | `/api/ayar-islemleri/yeni-kasa-yonetimi/odeme-yontemleri/lookups` | JWT + ayar-islemleri.yeni-kasa-yonetimi.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: YeniKasaPaymentMethodLookupsDto |
+| PUT | `/api/ayar-islemleri/yeni-kasa-yonetimi/odeme-yontemleri/siralama` | JWT + ayar-islemleri.yeni-kasa-yonetimi.update | body: request / UpdatePaymentMethodsOrderRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>204: bildirilmemis |
+| GET | `/api/ayar-islemleri/yeni-kasa-yonetimi/stok-ara` | JWT + ayar-islemleri.yeni-kasa-yonetimi.list | query: q / string<br>query: take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyList&lt;YeniKasaStockLookupDto&gt; |
+| POST | `/api/ayar-islemleri/yeni-kasa-yonetimi/sync-push` | JWT + ayar-islemleri.yeni-kasa-yonetimi.update |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: SyncPushResultDto |
+| GET | `/api/ayar-islemleri/yeni-kasa-yonetimi/urun-gorsel/{inventoryCode}` | Anonim | path: inventoryCode / string (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: bildirilmemis<br>404: ProblemDetails |
+| GET | `/api/ayar-islemleri/yeni-kasa-yonetimi/yetki-matrisi` | JWT + ayar-islemleri.yeni-kasa-yonetimi.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: YeniKasaRolePermissionMatrixDto |
+| PUT | `/api/ayar-islemleri/yeni-kasa-yonetimi/yetki-matrisi` | JWT + ayar-islemleri.yeni-kasa-yonetimi.update | body: request / UpdateRolePermissionsRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>204: bildirilmemis |
+| POST | `/api/ayar-islemleri/yeni-kasa-yonetimi/yetki-matrisi/kopyala` | JWT + ayar-islemleri.yeni-kasa-yonetimi.update | body: request / CopyRolePermissionsRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CopyRolePermissionsResultDto |
+| PUT | `/api/ayar-islemleri/yeni-kasa-yonetimi/yetki-matrisi/toplu` | JWT + ayar-islemleri.yeni-kasa-yonetimi.update | body: request / BulkUpdateRolePermissionsRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>204: bildirilmemis |
 | GET | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/alan-haritasi` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: MikroDocumentFieldCatalogDto |
 | DELETE | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/banknot-takipleri/{banknoteTrackId}` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.delete | path: banknoteTrackId / string (uuid) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: MikroDocumentDeleteResponse<br>400: ProblemDetails<br>404: ProblemDetails |
 | GET | `/api/duzeltme-islemleri/mikro-evrak-duzenleme/banknot-takipleri/{banknoteTrackId}` | JWT + duzeltme-islemleri.mikro-evrak-duzenleme.detail | path: banknoteTrackId / string (uuid) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: BanknoteTrackDto<br>400: ProblemDetails<br>404: ProblemDetails |
@@ -1869,6 +1897,305 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `generatedAtUtc` | string (date-time) | Hayir |  |
 | `overallStatus` | string | Hayir | nullable |
 | `workers` | FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme.WorkerMonitoringItemDto[] | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.YeniKasaYonetimi.Models.BulkRolePermissionUpdateItem
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `permissionIds` | integer (int32)[] | Hayir | nullable |
+| `roleId` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.YeniKasaYonetimi.Models.BulkUpdateRolePermissionsRequest
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `roles` | FurpaMerkezApi.Application.Modules.AyarIslemleri.YeniKasaYonetimi.Models.BulkRolePermissionUpdateItem[] | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.YeniKasaYonetimi.Models.CopyRolePermissionsRequest
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `sourceRoleId` | integer (int32) | Hayir |  |
+| `targetRoleId` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.YeniKasaYonetimi.Models.CopyRolePermissionsResultDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `copiedPermissionCount` | integer (int32) | Hayir |  |
+| `isSuccess` | boolean | Hayir |  |
+| `message` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.YeniKasaYonetimi.Models.CreateFastAccessCategoryRequest
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `description` | string | Hayir | nullable |
+| `name` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.YeniKasaYonetimi.Models.CreateFastAccessItemRequest
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `barcode` | string | Hayir | nullable |
+| `base64Data` | string | Hayir | nullable |
+| `categoryKey` | string | Hayir | nullable |
+| `inventoryCode` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.YeniKasaYonetimi.Models.CreateYeniKasaDisplayContentRequest
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `base64Data` | string | Hayir | nullable |
+| `endDate` | string (date-time) | Hayir | nullable |
+| `name` | string | Hayir | nullable |
+| `pageType` | string | Hayir | nullable |
+| `sirano` | integer (int32) | Hayir |  |
+| `startDate` | string (date-time) | Hayir | nullable |
+| `type` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.YeniKasaYonetimi.Models.DisplayContentOrderUpdateItem
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `id` | integer (int32) | Hayir |  |
+| `sirano` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.YeniKasaYonetimi.Models.PaymentMethodOrderUpdateItem
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `id` | integer (int32) | Hayir |  |
+| `sirano` | integer (int32) | Hayir |  |
+| `status` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.YeniKasaYonetimi.Models.SyncPushResultDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `isSuccess` | boolean | Hayir |  |
+| `message` | string | Hayir | nullable |
+| `triggeredAtUtc` | string (date-time) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.YeniKasaYonetimi.Models.TestFtpConnectionRequest
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `ftpFolderPath` | string | Hayir | nullable |
+| `ftpHost` | string | Hayir | nullable |
+| `ftpPassword` | string | Hayir | nullable |
+| `ftpPort` | integer (int32) | Hayir | nullable |
+| `ftpUsername` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.YeniKasaYonetimi.Models.TestFtpConnectionResultDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `isSuccess` | boolean | Hayir |  |
+| `latencyMs` | integer (int64) | Hayir |  |
+| `message` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.YeniKasaYonetimi.Models.UpdateDisplayContentsOrderRequest
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `items` | FurpaMerkezApi.Application.Modules.AyarIslemleri.YeniKasaYonetimi.Models.DisplayContentOrderUpdateItem[] | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.YeniKasaYonetimi.Models.UpdateFastAccessCategoryRequest
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `description` | string | Hayir | nullable |
+| `id` | integer (int32) | Hayir |  |
+| `name` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.YeniKasaYonetimi.Models.UpdatePaymentMethodsOrderRequest
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `items` | FurpaMerkezApi.Application.Modules.AyarIslemleri.YeniKasaYonetimi.Models.PaymentMethodOrderUpdateItem[] | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.YeniKasaYonetimi.Models.UpdateRolePermissionsRequest
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `permissionIds` | integer (int32)[] | Hayir | nullable |
+| `roleId` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.YeniKasaYonetimi.Models.UpdateYeniKasaAppSettingsRequest
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `fisFaturaLimit` | number (double) | Hayir | nullable |
+| `fisGenislik` | string | Hayir | nullable |
+| `ftpHost` | string | Hayir | nullable |
+| `ftpPassword` | string | Hayir | nullable |
+| `ftpUsername` | string | Hayir | nullable |
+| `nakitLimit` | number (double) | Hayir | nullable |
+| `pavoFis` | integer (int32) | Hayir |  |
+| `printerDotsPerLine` | integer (int32) | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.YeniKasaYonetimi.Models.UpdateYeniKasaDisplaySettingsRequest
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `id` | integer (int32) | Hayir |  |
+| `isTwoSlider` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.YeniKasaYonetimi.Models.UpdateYeniKasaPaymentMethodRequest
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `brand` | string | Hayir | nullable |
+| `description` | string | Hayir | nullable |
+| `group` | string | Hayir | nullable |
+| `id` | integer (int32) | Hayir |  |
+| `name` | string | Hayir | nullable |
+| `pavoIsActive` | integer (int32) | Hayir |  |
+| `pavoMediator` | string | Hayir | nullable |
+| `pavoType` | string | Hayir | nullable |
+| `sirano` | integer (int32) | Hayir |  |
+| `status` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.YeniKasaYonetimi.Models.YeniKasaAppSettingsDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `createdAt` | string (date-time) | Hayir | nullable |
+| `fisFaturaLimit` | number (double) | Hayir | nullable |
+| `fisGenislik` | string | Hayir | nullable |
+| `ftpFolderPath` | string | Hayir | nullable |
+| `ftpHost` | string | Hayir | nullable |
+| `ftpPassword` | string | Hayir | nullable |
+| `ftpPort` | integer (int32) | Hayir | nullable |
+| `ftpUsername` | string | Hayir | nullable |
+| `id` | integer (int32) | Hayir |  |
+| `nakitLimit` | number (double) | Hayir | nullable |
+| `pavoFis` | integer (int32) | Hayir |  |
+| `printerDotsPerLine` | integer (int32) | Hayir | nullable |
+| `updatedAt` | string (date-time) | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.YeniKasaYonetimi.Models.YeniKasaDisplayContentDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `createdAt` | string (date-time) | Hayir | nullable |
+| `endDate` | string (date-time) | Hayir | nullable |
+| `id` | integer (int32) | Hayir |  |
+| `imageUrl` | string | Hayir | nullable |
+| `name` | string | Hayir | nullable |
+| `pageType` | string | Hayir | nullable |
+| `sirano` | integer (int32) | Hayir |  |
+| `startDate` | string (date-time) | Hayir | nullable |
+| `type` | string | Hayir | nullable |
+| `updatedAt` | string (date-time) | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.YeniKasaYonetimi.Models.YeniKasaDisplaySettingsDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `createdAt` | string (date-time) | Hayir | nullable |
+| `id` | integer (int32) | Hayir |  |
+| `isTwoSlider` | integer (int32) | Hayir |  |
+| `pageType` | string | Hayir | nullable |
+| `updatedAt` | string (date-time) | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.YeniKasaYonetimi.Models.YeniKasaFastAccessCategoryDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `categoryKey` | string | Hayir | nullable |
+| `createdAt` | string (date-time) | Hayir | nullable |
+| `description` | string | Hayir | nullable |
+| `id` | integer (int32) | Hayir |  |
+| `itemCount` | integer (int32) | Hayir |  |
+| `name` | string | Hayir | nullable |
+| `updatedAt` | string (date-time) | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.YeniKasaYonetimi.Models.YeniKasaFastAccessItemDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `barcode` | string | Hayir | nullable |
+| `categoryKey` | string | Hayir | nullable |
+| `createdAt` | string (date-time) | Hayir | nullable |
+| `id` | integer (int32) | Hayir |  |
+| `imagePath` | string | Hayir | nullable |
+| `imageUrl` | string | Hayir | nullable |
+| `inventoryCode` | string | Hayir | nullable |
+| `productName` | string | Hayir | nullable |
+| `updatedAt` | string (date-time) | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.YeniKasaYonetimi.Models.YeniKasaPaymentLookupItemDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `code` | string | Hayir | nullable |
+| `label` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.YeniKasaYonetimi.Models.YeniKasaPaymentMethodDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `brand` | string | Hayir | nullable |
+| `description` | string | Hayir | nullable |
+| `group` | string | Hayir | nullable |
+| `id` | integer (int32) | Hayir |  |
+| `name` | string | Hayir | nullable |
+| `pavoIsActive` | integer (int32) | Hayir |  |
+| `pavoMediator` | string | Hayir | nullable |
+| `pavoType` | string | Hayir | nullable |
+| `sirano` | integer (int32) | Hayir |  |
+| `status` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.YeniKasaYonetimi.Models.YeniKasaPaymentMethodLookupsDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `brands` | FurpaMerkezApi.Application.Modules.AyarIslemleri.YeniKasaYonetimi.Models.YeniKasaPaymentLookupItemDto[] | Hayir | nullable |
+| `groups` | string[] | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.YeniKasaYonetimi.Models.YeniKasaPermissionDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `code` | string | Hayir | nullable |
+| `description` | string | Hayir | nullable |
+| `id` | integer (int32) | Hayir |  |
+| `name` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.YeniKasaYonetimi.Models.YeniKasaRoleDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `description` | string | Hayir | nullable |
+| `id` | integer (int32) | Hayir |  |
+| `name` | string | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.YeniKasaYonetimi.Models.YeniKasaRolePermissionDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `permissionId` | integer (int32) | Hayir |  |
+| `roleId` | integer (int32) | Hayir |  |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.YeniKasaYonetimi.Models.YeniKasaRolePermissionMatrixDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `permissions` | FurpaMerkezApi.Application.Modules.AyarIslemleri.YeniKasaYonetimi.Models.YeniKasaPermissionDto[] | Hayir | nullable |
+| `rolePermissions` | FurpaMerkezApi.Application.Modules.AyarIslemleri.YeniKasaYonetimi.Models.YeniKasaRolePermissionDto[] | Hayir | nullable |
+| `roles` | FurpaMerkezApi.Application.Modules.AyarIslemleri.YeniKasaYonetimi.Models.YeniKasaRoleDto[] | Hayir | nullable |
+
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.YeniKasaYonetimi.Models.YeniKasaStockLookupDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `barcode` | string | Hayir | nullable |
+| `salePrice` | number (double) | Hayir | nullable |
+| `stockCode` | string | Hayir | nullable |
+| `stockName` | string | Hayir | nullable |
+| `unit` | string | Hayir | nullable |
 
 ### FurpaMerkezApi.Application.Modules.Common.CompanyMovements.CompanyMovementDetailDto
 

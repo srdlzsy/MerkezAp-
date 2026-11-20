@@ -43,6 +43,25 @@ public sealed class CompanyOrderDetailQueryExecutorTests
         Assert.Equal("8690000000001", Assert.Single(result.Items).Barcode);
     }
 
+    [Fact]
+    public async Task ExecuteAsync_MatchesDocumentSerieWithLeadingOrTrailingWhitespace()
+    {
+        await using var dbContext = CreateDbContext();
+        var order = CreateOrderLine(unitPointer: 1);
+        order.sip_evrakno_seri = " F50";
+        order.sip_evrakno_sira = 2;
+        dbContext.SIPARISLERs.Add(order);
+        dbContext.BARKOD_TANIMLARIs.Add(CreateBarcode("8690000000001", unitPointer: 1, isMaster: true));
+        await dbContext.SaveChangesAsync();
+
+        var result = await new CompanyOrderDetailQueryExecutor(dbContext).ExecuteAsync(
+            new CompanyOrderDetailRequest(50, "F50", 2),
+            CompanyOrderListDirection.Issued,
+            CancellationToken.None);
+
+        Assert.Equal(" F50", result.Header.DocumentSerie);
+    }
+
     private static SIPARISLER CreateOrderLine(byte unitPointer) =>
         new()
         {

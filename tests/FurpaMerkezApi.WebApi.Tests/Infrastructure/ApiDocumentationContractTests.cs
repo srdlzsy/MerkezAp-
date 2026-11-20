@@ -125,7 +125,7 @@ public sealed class ApiDocumentationContractTests(ITestOutputHelper output)
     private static string TypeName(Type? type) => type == null || type == typeof(void) ? "bildirilmemis" :
         type.IsGenericType ? type.Name.Split('`')[0] + "&lt;" + string.Join(",", type.GenericTypeArguments.Select(TypeName)) + "&gt;" : type.Name;
     private static string FormatRouteParameter(OpenApiParameter parameter) =>
-        $"{parameter.In.ToString().ToLowerInvariant()}: {parameter.Name} / {SchemaType(parameter.Schema ?? new OpenApiSchema { Type = "unknown" })}{(parameter.Required ? " (zorunlu)" : "")}";
+        $"{(parameter.In?.ToString() ?? "unknown").ToLowerInvariant()}: {parameter.Name} / {SchemaType(parameter.Schema ?? new OpenApiSchema { Type = "unknown" })}{(parameter.Required ? " (zorunlu)" : "")}";
     private static string SchemaType(OpenApiSchema schema) => schema.Reference?.Id ??
         (schema.Type == "array" ? SchemaType(schema.Items) + "[]" : schema.Type + (schema.Format == null ? "" : " (" + schema.Format + ")"));
     private static string Normalize(string text) => Regex.Replace(text, @"\{[^}\r\n]+\}", "{param}");

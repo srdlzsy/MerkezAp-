@@ -33,11 +33,14 @@ public sealed class WarehouseOrderDetailQueryExecutor(
 
         var isIssued = direction == WarehouseOrderListDirection.Issued;
         var documentSerie = request.DocumentSerie.Trim();
+        var rawDocumentSerie = request.DocumentSerie;
 
         var baseQuery = mikroDbContext.DEPOLAR_ARASI_SIPARISLERs
             .AsNoTracking()
             .Where(order =>
-                order.ssip_evrakno_seri == documentSerie &&
+                (order.ssip_evrakno_seri == documentSerie ||
+                 order.ssip_evrakno_seri == rawDocumentSerie ||
+                 (order.ssip_evrakno_seri != null && order.ssip_evrakno_seri.Trim() == documentSerie)) &&
                 order.ssip_evrakno_sira == request.DocumentOrderNo);
 
         baseQuery = isIssued
