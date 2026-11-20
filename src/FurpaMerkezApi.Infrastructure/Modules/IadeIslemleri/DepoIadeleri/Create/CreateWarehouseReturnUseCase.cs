@@ -23,6 +23,7 @@ public sealed class CreateWarehouseReturnUseCase(
     IOptions<MikroWriteOptions> mikroWriteOptions,
     IOptions<AxataSynchronizationOptions> axataOptions,
     IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
+    IOptionsMonitor<MikroWriteBatchingOptions> mikroWriteBatchingOptions,
     MikroApiClient mikroApiClient,
     MobileOfflineSyncService mobileOfflineSyncService,
     ILogger<CreateWarehouseReturnUseCase> logger)
@@ -179,22 +180,59 @@ public sealed class CreateWarehouseReturnUseCase(
                 }
                 LogCreatePhase("build-movement-rows", movements.Count);
 
+                var batchingOptions = mikroWriteBatchingOptions.CurrentValue;
+                var useBulkMovementWrite = batchingOptions.WarehouseReturnEnabled;
+
                 if (automaticOrderLines.Count > 0)
                 {
                     await mikroWriteDbContext.DEPOLAR_ARASI_SIPARISLERs.AddRangeAsync(
                         automaticOrderLines.Values,
                         cancellationToken);
+
+                    if (useBulkMovementWrite)
+                    {
+                        await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+                        LogCreatePhase("save-automatic-warehouse-order-lines", movements.Count);
+                    }
                 }
 
-                await mikroWriteDbContext.STOK_HAREKETLERIs.AddRangeAsync(movements, cancellationToken);
+                if (useBulkMovementWrite)
+                {
+                    var bulkStopwatch = Stopwatch.StartNew();
+                    await MikroStockMovementBulkWriter.WriteAsync(
+                        mikroWriteDbContext,
+                        movements,
+                        batchingOptions.BulkCopyTimeoutSeconds,
+                        cancellationToken);
+                    logger.LogInformation(
+                        "Warehouse return stock movements were inserted with single-row Mikro trigger batches. ElapsedMs={ElapsedMs}, BatchCount={BatchCount}, LineCount={LineCount}, DocumentSerie={DocumentSerie}, DocumentOrderNo={DocumentOrderNo}, SourceWarehouseNo={SourceWarehouseNo}, TargetWarehouseNo={TargetWarehouseNo}, TransitWarehouseNo={TransitWarehouseNo}",
+                        bulkStopwatch.Elapsed.TotalMilliseconds,
+                        movements.Count,
+                        movements.Count,
+                        documentSerie,
+                        documentOrderNo,
+                        request.SourceWarehouseNo,
+                        request.TargetWarehouseNo,
+                        request.TransitWarehouseNo);
+                    LogCreatePhase("bulk-insert-stock-movements", movements.Count);
+                }
+                else
+                {
+                    await mikroWriteDbContext.STOK_HAREKETLERIs.AddRangeAsync(movements, cancellationToken);
+                }
+
                 if (movementExtras.Count > 0)
                 {
                     await mikroWriteDbContext.STOK_HAREKETLERI_EKs.AddRangeAsync(movementExtras, cancellationToken);
                 }
-                LogCreatePhase("track-entities", movements.Count);
+                LogCreatePhase(
+                    useBulkMovementWrite ? "track-related-entities" : "track-entities",
+                    movements.Count);
 
                 await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
-                LogCreatePhase("save-changes", movements.Count);
+                LogCreatePhase(
+                    useBulkMovementWrite ? "save-related-entities" : "save-changes",
+                    movements.Count);
                 await transaction.CommitAsync(cancellationToken);
                 LogCreatePhase("commit", movements.Count);
 

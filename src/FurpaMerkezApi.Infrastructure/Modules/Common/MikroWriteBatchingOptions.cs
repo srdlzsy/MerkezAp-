@@ -6,6 +6,8 @@ public sealed class MikroWriteBatchingOptions
 
     public bool InterWarehouseShipmentEnabled { get; init; }
 
+    public bool WarehouseReturnEnabled { get; init; }
+
     public bool CompanyReceivingEnabled { get; init; }
 
     public bool CompanyReturnEnabled { get; init; }
