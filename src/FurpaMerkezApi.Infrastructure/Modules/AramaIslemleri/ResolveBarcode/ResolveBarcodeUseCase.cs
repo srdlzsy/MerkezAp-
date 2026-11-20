@@ -340,6 +340,7 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
             : await FindLatestPurchasePriceAsync(
                 stock.StockCode,
                 supplierCode,
+                request.WarehouseNo,
                 cancellationToken);
 
         var salesBlockCode = warehouseDetail?.SalesBlockCode ?? stock.SalesBlockCode;
@@ -653,6 +654,7 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
     private async Task<PurchasePriceSnapshot?> FindLatestPurchasePriceAsync(
         string stockCode,
         string? supplierCode,
+        int warehouseNo,
         CancellationToken cancellationToken)
     {
         var connection = mikroDbContext.Database.GetDbConnection();
@@ -679,7 +681,18 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
                 FROM dbo.SATINALMA_SARTLARI WITH (NOLOCK)
                 WHERE sas_stok_kod = @stockCode
                   AND (@supplierCode IS NULL OR sas_cari_kod = @supplierCode)
+                  AND ISNULL(sas_iptal, 0) = 0
+                  AND (sas_depo_no IS NULL OR sas_depo_no IN (0, @warehouseNo))
+                  AND (sas_basla_tarih IS NULL OR sas_basla_tarih <= GETDATE())
+                  AND
+                  (
+                      sas_bitis_tarih IS NULL
+                      OR sas_bitis_tarih <= CONVERT(date, '19000101', 112)
+                      OR sas_bitis_tarih >= CONVERT(date, GETDATE())
+                  )
                 ORDER BY
+                    CASE WHEN sas_depo_no = @warehouseNo THEN 0 ELSE 1 END,
+                    ISNULL(sas_basla_tarih, CONVERT(datetime, '19000101', 112)) DESC,
                     ISNULL(sas_belge_tarih, CONVERT(datetime, '19000101', 112)) DESC,
                     ISNULL(sas_create_date, CONVERT(datetime, '19000101', 112)) DESC,
                     sas_Guid DESC;
@@ -689,6 +702,7 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
 
             AddParameter(command, "@stockCode", stockCode, DbType.String);
             AddParameter(command, "@supplierCode", supplierCode, DbType.String);
+            AddParameter(command, "@warehouseNo", warehouseNo, DbType.Int32);
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             if (!await reader.ReadAsync(cancellationToken))

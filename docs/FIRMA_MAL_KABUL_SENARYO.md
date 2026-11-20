@@ -1152,3 +1152,37 @@ Receiving quantity is greater than remaining order quantity.
 - UI e-irsaliye gonderimini otomatik yapmaz.
 - Kullanici firma iade evragindan manuel e-irsaliye gonderir.
 - Offline taslakta ayni islem icin ayni `clientRequestId` korunur.
+
+## Satin Alma Fiyat Yapisi
+
+Firma siparisi ve firma mal kabul kaydinda `unitPrice`, eski istemcilerle
+uyumluluk ve ekranda net alis fiyatini gostermek icin korunur. Mikro'ya yazilan
+mali yapi ise istemcinin bu tek alanina guvenmez.
+
+API, kayittan once hareket/siparis tarihine gore su anahtarla aktif satin alma
+sartini yeniden cozer:
+
+```text
+cari + stok + depo + islem tarihi
+```
+
+Depoya ozel sart genel depo sartindan once gelir. Iptal edilmis, baslangic tarihi
+gelmemis veya bitmis sart kullanilmaz. Siparisli kabulde oncelik mevcut Mikro
+siparis satirinin mali yapisidir. Eski siparis satiri net fiyata indirgenmis ve
+iskonto alanlari bos birakilmis ise, ayni tarihteki satin alma sarti ile mali
+kirilim yeniden kurulur.
+
+Mikro kaydinda:
+
+- `sth_tutar` / `sip_tutar`: brut tutar,
+- `sth_iskonto1..6` / `sip_iskonto_1..6`: iskonto tutarlari,
+- `sth_masraf1..4` / `sip_masraf_1..4`: masraf tutarlari,
+- `sth_vergi_pntr` / `sip_vergi_pntr`: `sto_toptan_vergi`,
+- `sth_vergi` / `sip_vergi`: iskonto ve masraf sonrasi matrah KDV'si
+
+olarak yazilir. Otomatik kismi kabul iadesi, kabul satiriyla ayni finansal anlik
+goruntuyu kullanir. `PurchaseFinancial` bilgisi offline istek govdesinde de
+saklandigi icin yeniden deneme ve read-back kontrolu ayni hesapla calisir.
+
+Bu degisiklik eski Mikro hareketlerini otomatik olarak degistirmez. Gecmis
+evraklar ayri bir kontrollu duzeltme calismasinin konusudur.

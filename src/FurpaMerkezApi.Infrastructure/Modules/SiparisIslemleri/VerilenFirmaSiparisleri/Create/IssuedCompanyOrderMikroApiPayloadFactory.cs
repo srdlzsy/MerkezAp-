@@ -1,6 +1,7 @@
 using System.Globalization;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.Create;
 using FurpaMerkezApi.Infrastructure.Modules.Common;
+using FurpaMerkezApi.Infrastructure.Modules.Common.PurchasePricing;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.Create;
 
@@ -24,9 +25,12 @@ internal static class IssuedCompanyOrderMikroApiPayloadFactory
         var satirlar = lines
             .Select((line, rowNo) =>
             {
-                var unitPrice = line.UnitPrice;
                 var quantity = line.Quantity;
-                var amount = quantity * unitPrice;
+                var snapshot = line.PurchaseFinancial ?? PurchaseFinancialCalculator.FromNetUnitPrice(
+                    Convert.ToDecimal(line.UnitPrice),
+                    0,
+                    0m);
+                var financial = PurchaseFinancialCalculator.Calculate(snapshot, Convert.ToDecimal(quantity));
 
                 return new IssuedCompanyOrderMikroApiLine(
                     FormatDate(orderDate),
@@ -41,13 +45,23 @@ internal static class IssuedCompanyOrderMikroApiPayloadFactory
                     string.Empty,
                     customerCode,
                     NormalizeText(line.StockCode, 25),
-                    unitPrice,
+                    Convert.ToDouble(snapshot.GrossUnitPrice),
                     quantity,
                     MikroUnitPointers.Primary,
                     0d,
-                    amount,
-                    2,
-                    0d,
+                    Convert.ToDouble(financial.GrossAmount),
+                    Convert.ToDouble(financial.DiscountAmounts[0]),
+                    Convert.ToDouble(financial.DiscountAmounts[1]),
+                    Convert.ToDouble(financial.DiscountAmounts[2]),
+                    Convert.ToDouble(financial.DiscountAmounts[3]),
+                    Convert.ToDouble(financial.DiscountAmounts[4]),
+                    Convert.ToDouble(financial.DiscountAmounts[5]),
+                    Convert.ToDouble(financial.ExpenseAmounts[0]),
+                    Convert.ToDouble(financial.ExpenseAmounts[1]),
+                    Convert.ToDouble(financial.ExpenseAmounts[2]),
+                    Convert.ToDouble(financial.ExpenseAmounts[3]),
+                    financial.TaxPointer,
+                    Convert.ToDouble(financial.TaxAmount),
                     0,
                     0d,
                     customerPaymentPlanNo,
@@ -117,6 +131,16 @@ internal sealed record IssuedCompanyOrderMikroApiLine(
     int sip_birim_pntr,
     double sip_teslim_miktar,
     double sip_tutar,
+    double sip_iskonto_1,
+    double sip_iskonto_2,
+    double sip_iskonto_3,
+    double sip_iskonto_4,
+    double sip_iskonto_5,
+    double sip_iskonto_6,
+    double sip_masraf_1,
+    double sip_masraf_2,
+    double sip_masraf_3,
+    double sip_masraf_4,
     int sip_vergi_pntr,
     double sip_vergi,
     int sip_masvergi_pntr,

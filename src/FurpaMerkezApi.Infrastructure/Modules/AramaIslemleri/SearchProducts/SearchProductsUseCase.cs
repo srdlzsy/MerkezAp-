@@ -151,6 +151,7 @@ public sealed class SearchProductsUseCase(
                 connection,
                 products,
                 supplierCode,
+                request.WarehouseNo,
                 cancellationToken);
 
             return await EnrichWithProcurementSourcesAsync(
@@ -632,6 +633,7 @@ public sealed class SearchProductsUseCase(
         DbConnection connection,
         IReadOnlyCollection<ProductLookupItemDto> products,
         string? supplierCode,
+        int warehouseNo,
         CancellationToken cancellationToken)
     {
         if (products.Count == 0 || supplierCode is null)
@@ -656,6 +658,7 @@ public sealed class SearchProductsUseCase(
             connection,
             stockCodes,
             supplierCode,
+            warehouseNo,
             cancellationToken);
 
         if (purchasePrices.Count == 0)
@@ -684,6 +687,7 @@ public sealed class SearchProductsUseCase(
         DbConnection connection,
         IReadOnlyCollection<string> stockCodes,
         string? supplierCode,
+        int warehouseNo,
         CancellationToken cancellationToken)
     {
         var purchasePrices = new Dictionary<string, PurchasePriceSnapshot>(StringComparer.OrdinalIgnoreCase);
@@ -714,6 +718,8 @@ public sealed class SearchProductsUseCase(
                     (
                         PARTITION BY LTRIM(RTRIM(sas_stok_kod))
                         ORDER BY
+                            CASE WHEN sas_depo_no = @warehouseNo THEN 0 ELSE 1 END,
+                            ISNULL(sas_basla_tarih, CONVERT(datetime, '19000101', 112)) DESC,
                             ISNULL(sas_belge_tarih, CONVERT(datetime, '19000101', 112)) DESC,
                             ISNULL(sas_create_date, CONVERT(datetime, '19000101', 112)) DESC,
                             sas_Guid DESC
@@ -722,6 +728,15 @@ public sealed class SearchProductsUseCase(
                 WHERE sas_stok_kod IS NOT NULL
                   AND LTRIM(RTRIM(sas_stok_kod)) IN ({string.Join(", ", stockCodeParameterNames)})
                   AND (@supplierCode IS NULL OR sas_cari_kod = @supplierCode)
+                  AND ISNULL(sas_iptal, 0) = 0
+                  AND (sas_depo_no IS NULL OR sas_depo_no IN (0, @warehouseNo))
+                  AND (sas_basla_tarih IS NULL OR sas_basla_tarih <= GETDATE())
+                  AND
+                  (
+                      sas_bitis_tarih IS NULL
+                      OR sas_bitis_tarih <= CONVERT(date, '19000101', 112)
+                      OR sas_bitis_tarih >= CONVERT(date, GETDATE())
+                  )
             )
             SELECT
                 StockCode,
@@ -740,6 +755,7 @@ public sealed class SearchProductsUseCase(
         command.CommandTimeout = 300;
 
         AddParameter(command, "@supplierCode", supplierCode);
+        AddParameter(command, "@warehouseNo", warehouseNo);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))

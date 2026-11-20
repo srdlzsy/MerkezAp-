@@ -7,6 +7,7 @@ using FurpaMerkezApi.Application.Common.Errors;
 using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
 using FurpaMerkezApi.Application.Modules.MalKabulIslemleri.MalKabuller.CompanyReceiving;
 using FurpaMerkezApi.Infrastructure.Modules.Common;
+using FurpaMerkezApi.Infrastructure.Modules.Common.PurchasePricing;
 using FurpaMerkezApi.Infrastructure.OfflineSync;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
@@ -26,6 +27,7 @@ public sealed class CreateCompanyReceivingUseCase(
     IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
     IOptionsMonitor<MikroWriteBatchingOptions> mikroWriteBatchingOptions,
     MikroApiClient mikroApiClient,
+    PurchaseFinancialSnapshotResolver purchaseFinancialSnapshotResolver,
     ILogger<CreateCompanyReceivingUseCase> logger)
     : ICreateCompanyReceivingUseCase
 {
@@ -64,6 +66,8 @@ public sealed class CreateCompanyReceivingUseCase(
                 .Select(line => line with { UnitPointer = MikroUnitPointers.Primary })
                 .ToArray()
         };
+        Validate(request);
+        request = await purchaseFinancialSnapshotResolver.ResolveAsync(request, cancellationToken);
         Validate(request);
         var writeMode = mikroWriteRoutingOptions.CurrentValue.CompanyReceiving;
         using var durableExecutionTimeout = DurableCreateExecution.CreateTimeout();
@@ -472,7 +476,7 @@ public sealed class CreateCompanyReceivingUseCase(
                         results
                             .Where(line => line.ReceivingMode == "order-overflow")
                             .Sum(line => line.AcceptedQuantity),
-                        movements.Sum(movement => movement.sth_tutar ?? 0d),
+                        movements.Sum(CalculateMovementNetAmount),
                         options.ConnectionStringName,
                         results,
                         movements.Sum(movement => movement.sth_miktar ?? 0d),
@@ -1135,7 +1139,7 @@ public sealed class CreateCompanyReceivingUseCase(
             customerCode,
             orderedMovements.Length,
             orderedMovements.Sum(movement => movement.sth_miktar ?? 0d),
-            orderedMovements.Sum(movement => movement.sth_tutar ?? 0d),
+            orderedMovements.Sum(CalculateMovementNetAmount),
             movementGuidByRowNo);
 
         return true;
@@ -1198,7 +1202,7 @@ public sealed class CreateCompanyReceivingUseCase(
             firstRow.sth_cari_kodu ?? customerCode,
             rows.Count,
             rows.Sum(row => row.sth_miktar ?? 0d),
-            rows.Sum(row => row.sth_tutar ?? 0d),
+            rows.Sum(CalculateMovementNetAmount),
             movementGuidByRowNo);
     }
 
@@ -1377,7 +1381,7 @@ public sealed class CreateCompanyReceivingUseCase(
             firstRow.sth_cari_kodu ?? customerCode,
             rows.Count,
             rows.Sum(row => row.sth_miktar ?? 0d),
-            rows.Sum(row => row.sth_tutar ?? 0d),
+            rows.Sum(CalculateMovementNetAmount),
             movementGuidByRowNo);
     }
 
@@ -1448,7 +1452,7 @@ public sealed class CreateCompanyReceivingUseCase(
             .Select(stock => new
             {
                 StockCode = stock.sto_kod ?? string.Empty,
-                TaxPointer = stock.sto_perakende_vergi ?? 0
+                TaxPointer = stock.sto_toptan_vergi ?? 0
             })
             .ToListAsync(cancellationToken);
 
@@ -1856,9 +1860,8 @@ public sealed class CreateCompanyReceivingUseCase(
         string offlineTraceKey,
         IReadOnlyDictionary<string, CompanyReceivingLineTaxInfo> lineTaxInfos)
     {
-        var unitPrice = line.UnitPrice;
-        var amount = acceptedQuantity * unitPrice;
         var taxInfo = ResolveLineTaxInfo(line, lineTaxInfos);
+        var financial = ResolveFinancialAmounts(line, acceptedQuantity, taxInfo);
 
         return new STOK_HAREKETLERI
         {
@@ -1926,19 +1929,19 @@ public sealed class CreateCompanyReceivingUseCase(
             sth_miktar = acceptedQuantity,
             sth_miktar2 = 0d,
             sth_birim_pntr = MikroUnitPointers.Primary,
-            sth_tutar = amount,
-            sth_iskonto1 = 0d,
-            sth_iskonto2 = 0d,
-            sth_iskonto3 = 0d,
-            sth_iskonto4 = 0d,
-            sth_iskonto5 = 0d,
-            sth_iskonto6 = 0d,
-            sth_masraf1 = 0d,
-            sth_masraf2 = 0d,
-            sth_masraf3 = 0d,
-            sth_masraf4 = 0d,
-            sth_vergi_pntr = taxInfo.TaxPointer,
-            sth_vergi = CalculateTaxAmount(amount, taxInfo.TaxRatePercent),
+            sth_tutar = Convert.ToDouble(financial.GrossAmount),
+            sth_iskonto1 = Convert.ToDouble(financial.DiscountAmounts[0]),
+            sth_iskonto2 = Convert.ToDouble(financial.DiscountAmounts[1]),
+            sth_iskonto3 = Convert.ToDouble(financial.DiscountAmounts[2]),
+            sth_iskonto4 = Convert.ToDouble(financial.DiscountAmounts[3]),
+            sth_iskonto5 = Convert.ToDouble(financial.DiscountAmounts[4]),
+            sth_iskonto6 = Convert.ToDouble(financial.DiscountAmounts[5]),
+            sth_masraf1 = Convert.ToDouble(financial.ExpenseAmounts[0]),
+            sth_masraf2 = Convert.ToDouble(financial.ExpenseAmounts[1]),
+            sth_masraf3 = Convert.ToDouble(financial.ExpenseAmounts[2]),
+            sth_masraf4 = Convert.ToDouble(financial.ExpenseAmounts[3]),
+            sth_vergi_pntr = checked((byte)financial.TaxPointer),
+            sth_vergi = Convert.ToDouble(financial.TaxAmount),
             sth_masraf_vergi_pntr = 0,
             sth_masraf_vergi = 0d,
             sth_netagirlik = 0d,
@@ -2021,9 +2024,8 @@ public sealed class CreateCompanyReceivingUseCase(
         string offlineTraceKey,
         IReadOnlyDictionary<string, CompanyReceivingLineTaxInfo> lineTaxInfos)
     {
-        var unitPrice = line.UnitPrice;
-        var amount = returnQuantity * unitPrice;
         var taxInfo = ResolveLineTaxInfo(line, lineTaxInfos);
+        var financial = ResolveFinancialAmounts(line, returnQuantity, taxInfo);
 
         return new STOK_HAREKETLERI
         {
@@ -2091,19 +2093,19 @@ public sealed class CreateCompanyReceivingUseCase(
             sth_miktar = returnQuantity,
             sth_miktar2 = 0d,
             sth_birim_pntr = MikroUnitPointers.Primary,
-            sth_tutar = amount,
-            sth_iskonto1 = 0d,
-            sth_iskonto2 = 0d,
-            sth_iskonto3 = 0d,
-            sth_iskonto4 = 0d,
-            sth_iskonto5 = 0d,
-            sth_iskonto6 = 0d,
-            sth_masraf1 = 0d,
-            sth_masraf2 = 0d,
-            sth_masraf3 = 0d,
-            sth_masraf4 = 0d,
-            sth_vergi_pntr = taxInfo.TaxPointer,
-            sth_vergi = CalculateTaxAmount(amount, taxInfo.TaxRatePercent),
+            sth_tutar = Convert.ToDouble(financial.GrossAmount),
+            sth_iskonto1 = Convert.ToDouble(financial.DiscountAmounts[0]),
+            sth_iskonto2 = Convert.ToDouble(financial.DiscountAmounts[1]),
+            sth_iskonto3 = Convert.ToDouble(financial.DiscountAmounts[2]),
+            sth_iskonto4 = Convert.ToDouble(financial.DiscountAmounts[3]),
+            sth_iskonto5 = Convert.ToDouble(financial.DiscountAmounts[4]),
+            sth_iskonto6 = Convert.ToDouble(financial.DiscountAmounts[5]),
+            sth_masraf1 = Convert.ToDouble(financial.ExpenseAmounts[0]),
+            sth_masraf2 = Convert.ToDouble(financial.ExpenseAmounts[1]),
+            sth_masraf3 = Convert.ToDouble(financial.ExpenseAmounts[2]),
+            sth_masraf4 = Convert.ToDouble(financial.ExpenseAmounts[3]),
+            sth_vergi_pntr = checked((byte)financial.TaxPointer),
+            sth_vergi = Convert.ToDouble(financial.TaxAmount),
             sth_masraf_vergi_pntr = 0,
             sth_masraf_vergi = 0d,
             sth_netagirlik = 0d,
@@ -2203,6 +2205,40 @@ public sealed class CreateCompanyReceivingUseCase(
             ? taxInfo
             : CompanyReceivingLineTaxInfo.Empty;
     }
+
+    private static PurchaseFinancialAmounts ResolveFinancialAmounts(
+        CreateCompanyReceivingLineRequest line,
+        double quantity,
+        CompanyReceivingLineTaxInfo fallbackTaxInfo)
+    {
+        var snapshot = line.PurchaseFinancial ?? PurchaseFinancialCalculator.FromNetUnitPrice(
+            Convert.ToDecimal(line.UnitPrice),
+            fallbackTaxInfo.TaxPointer,
+            fallbackTaxInfo.TaxRatePercent);
+        if (snapshot.TaxPointer <= 0 && fallbackTaxInfo.TaxPointer > 0)
+        {
+            snapshot = snapshot with
+            {
+                TaxPointer = fallbackTaxInfo.TaxPointer,
+                TaxRatePercent = fallbackTaxInfo.TaxRatePercent
+            };
+        }
+
+        return PurchaseFinancialCalculator.Calculate(snapshot, Convert.ToDecimal(quantity));
+    }
+
+    private static double CalculateMovementNetAmount(STOK_HAREKETLERI movement) =>
+        (movement.sth_tutar ?? 0d) -
+        (movement.sth_iskonto1 ?? 0d) -
+        (movement.sth_iskonto2 ?? 0d) -
+        (movement.sth_iskonto3 ?? 0d) -
+        (movement.sth_iskonto4 ?? 0d) -
+        (movement.sth_iskonto5 ?? 0d) -
+        (movement.sth_iskonto6 ?? 0d) +
+        (movement.sth_masraf1 ?? 0d) +
+        (movement.sth_masraf2 ?? 0d) +
+        (movement.sth_masraf3 ?? 0d) +
+        (movement.sth_masraf4 ?? 0d);
 
     internal static double CalculateTaxAmount(double amount, decimal taxRatePercent)
     {

@@ -80,6 +80,30 @@ public sealed class CompanyReceivingIrsaliyeMikroApiPayloadFactoryTests
         Assert.Equal(string.Empty, line.sth_belge_no);
     }
 
+    [Fact]
+    public void Create_PreservesPurchaseDiscountAndExpenseBreakdown()
+    {
+        var movement = CreateMovement(Guid.Empty);
+        movement.sth_iskonto1 = 3d;
+        movement.sth_iskonto2 = 1d;
+        movement.sth_iskonto3 = 0.01d;
+        movement.sth_iskonto4 = 0.02d;
+        movement.sth_iskonto5 = 0.03d;
+        movement.sth_iskonto6 = 0.04d;
+        movement.sth_masraf1 = 2d;
+        movement.sth_masraf2 = 3d;
+        movement.sth_masraf3 = 4d;
+        movement.sth_masraf4 = 5d;
+
+        var line = CompanyReceivingIrsaliyeMikroApiPayloadFactory.Create([movement], "test")
+            .evraklar.Single().satirlar.Single();
+
+        Assert.Equal(3d, line.sth_iskonto1);
+        Assert.Equal(0.04d, line.sth_iskonto6);
+        Assert.Equal(2d, line.sth_masraf1);
+        Assert.Equal(5d, line.sth_masraf4);
+    }
+
     private static STOK_HAREKETLERI CreateMovement(Guid orderGuid) =>
         new()
         {

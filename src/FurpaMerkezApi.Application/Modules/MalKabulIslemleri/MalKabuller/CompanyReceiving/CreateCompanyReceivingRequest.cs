@@ -1,4 +1,5 @@
 using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
+using FurpaMerkezApi.Application.Modules.Common.PurchasePricing;
 
 namespace FurpaMerkezApi.Application.Modules.MalKabulIslemleri.MalKabuller.CompanyReceiving;
 
@@ -34,4 +35,5 @@ public sealed record CreateCompanyReceivingLineRequest(
     int LotNo = 0,
     string? ProjectCode = null,
     string? CustomerResponsibilityCenter = null,
-    string? ProductResponsibilityCenter = null);
+    string? ProductResponsibilityCenter = null,
+    PurchaseFinancialSnapshot? PurchaseFinancial = null);

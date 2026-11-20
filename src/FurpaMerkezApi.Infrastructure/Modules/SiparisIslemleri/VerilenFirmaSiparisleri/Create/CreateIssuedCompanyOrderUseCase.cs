@@ -3,6 +3,7 @@ using System.Text.Json;
 using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.Create;
 using FurpaMerkezApi.Infrastructure.Modules.Common;
+using FurpaMerkezApi.Infrastructure.Modules.Common.PurchasePricing;
 using FurpaMerkezApi.Infrastructure.OfflineSync;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
@@ -19,6 +20,7 @@ public sealed class CreateIssuedCompanyOrderUseCase(
     IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
     MikroApiClient mikroApiClient,
     MobileOfflineSyncService mobileOfflineSyncService,
+    PurchaseFinancialSnapshotResolver purchaseFinancialSnapshotResolver,
     ILogger<CreateIssuedCompanyOrderUseCase> logger)
     : ICreateIssuedCompanyOrderUseCase
 {
@@ -42,6 +44,8 @@ public sealed class CreateIssuedCompanyOrderUseCase(
                 .Select(line => line with { UnitPointer = MikroUnitPointers.Primary })
                 .ToArray()
         };
+        Validate(request);
+        request = await purchaseFinancialSnapshotResolver.ResolveAsync(request, cancellationToken);
         Validate(request);
 
         return await OfflineCreateGuard.ExecuteAsync(
@@ -317,6 +321,18 @@ public sealed class CreateIssuedCompanyOrderUseCase(
                 order.sip_b_fiyat,
                 order.sip_miktar,
                 order.sip_tutar,
+                order.sip_iskonto_1,
+                order.sip_iskonto_2,
+                order.sip_iskonto_3,
+                order.sip_iskonto_4,
+                order.sip_iskonto_5,
+                order.sip_iskonto_6,
+                order.sip_masraf_1,
+                order.sip_masraf_2,
+                order.sip_masraf_3,
+                order.sip_masraf_4,
+                order.sip_vergi_pntr,
+                order.sip_vergi,
                 order.sip_birim_pntr,
                 order.sip_aciklama,
                 order.sip_aciklama2,
@@ -343,6 +359,18 @@ public sealed class CreateIssuedCompanyOrderUseCase(
                 row.sip_b_fiyat,
                 row.sip_miktar,
                 row.sip_tutar,
+                row.sip_iskonto_1,
+                row.sip_iskonto_2,
+                row.sip_iskonto_3,
+                row.sip_iskonto_4,
+                row.sip_iskonto_5,
+                row.sip_iskonto_6,
+                row.sip_masraf_1,
+                row.sip_masraf_2,
+                row.sip_masraf_3,
+                row.sip_masraf_4,
+                row.sip_vergi_pntr,
+                row.sip_vergi,
                 row.sip_birim_pntr,
                 row.sip_aciklama,
                 row.sip_aciklama2,
@@ -374,7 +402,18 @@ public sealed class CreateIssuedCompanyOrderUseCase(
             firstRow.sip_musteri_kod ?? normalizedCustomerCode,
             rows.Count,
             rows.Sum(row => row.sip_miktar ?? 0d),
-            rows.Sum(row => row.sip_tutar ?? 0d),
+            rows.Sum(row =>
+                (row.sip_tutar ?? 0d) -
+                (row.sip_iskonto_1 ?? 0d) -
+                (row.sip_iskonto_2 ?? 0d) -
+                (row.sip_iskonto_3 ?? 0d) -
+                (row.sip_iskonto_4 ?? 0d) -
+                (row.sip_iskonto_5 ?? 0d) -
+                (row.sip_iskonto_6 ?? 0d) +
+                (row.sip_masraf_1 ?? 0d) +
+                (row.sip_masraf_2 ?? 0d) +
+                (row.sip_masraf_3 ?? 0d) +
+                (row.sip_masraf_4 ?? 0d)),
             writeConnectionName);
     }
 
@@ -492,8 +531,13 @@ public sealed class CreateIssuedCompanyOrderUseCase(
         int documentOrderNo,
         string traceKey)
     {
-        var unitPrice = line.UnitPrice;
-        var amount = line.Quantity * unitPrice;
+        var financial = PurchaseFinancialCalculator.Calculate(
+            line.PurchaseFinancial ?? PurchaseFinancialCalculator.FromNetUnitPrice(
+                Convert.ToDecimal(line.UnitPrice),
+                0,
+                0m),
+            Convert.ToDecimal(line.Quantity));
+        var grossUnitPrice = line.PurchaseFinancial?.GrossUnitPrice ?? Convert.ToDecimal(line.UnitPrice);
 
         return new SIPARISLER
         {
@@ -527,23 +571,23 @@ public sealed class CreateIssuedCompanyOrderUseCase(
             sip_satici_kod = string.Empty,
             sip_musteri_kod = request.CustomerCode.Trim(),
             sip_stok_kod = line.StockCode.Trim(),
-            sip_b_fiyat = unitPrice,
+            sip_b_fiyat = Convert.ToDouble(grossUnitPrice),
             sip_miktar = line.Quantity,
             sip_birim_pntr = MikroUnitPointers.Primary,
             sip_teslim_miktar = 0d,
-            sip_tutar = amount,
-            sip_iskonto_1 = 0d,
-            sip_iskonto_2 = 0d,
-            sip_iskonto_3 = 0d,
-            sip_iskonto_4 = 0d,
-            sip_iskonto_5 = 0d,
-            sip_iskonto_6 = 0d,
-            sip_masraf_1 = 0d,
-            sip_masraf_2 = 0d,
-            sip_masraf_3 = 0d,
-            sip_masraf_4 = 0d,
-            sip_vergi_pntr = 2,
-            sip_vergi = 0d,
+            sip_tutar = Convert.ToDouble(financial.GrossAmount),
+            sip_iskonto_1 = Convert.ToDouble(financial.DiscountAmounts[0]),
+            sip_iskonto_2 = Convert.ToDouble(financial.DiscountAmounts[1]),
+            sip_iskonto_3 = Convert.ToDouble(financial.DiscountAmounts[2]),
+            sip_iskonto_4 = Convert.ToDouble(financial.DiscountAmounts[3]),
+            sip_iskonto_5 = Convert.ToDouble(financial.DiscountAmounts[4]),
+            sip_iskonto_6 = Convert.ToDouble(financial.DiscountAmounts[5]),
+            sip_masraf_1 = Convert.ToDouble(financial.ExpenseAmounts[0]),
+            sip_masraf_2 = Convert.ToDouble(financial.ExpenseAmounts[1]),
+            sip_masraf_3 = Convert.ToDouble(financial.ExpenseAmounts[2]),
+            sip_masraf_4 = Convert.ToDouble(financial.ExpenseAmounts[3]),
+            sip_vergi_pntr = checked((byte)financial.TaxPointer),
+            sip_vergi = Convert.ToDouble(financial.TaxAmount),
             sip_masvergi_pntr = 0,
             sip_masvergi = 0d,
             sip_opno = customer.PaymentPlanNo,
@@ -564,16 +608,16 @@ public sealed class CreateIssuedCompanyOrderUseCase(
             sip_teslimturu = string.Empty,
             sip_cagrilabilir_fl = customer.CanBeCalled,
             sip_prosip_uid = Guid.Empty,
-            sip_isk1 = true,
-            sip_isk2 = true,
-            sip_isk3 = false,
-            sip_isk4 = false,
-            sip_isk5 = false,
-            sip_isk6 = false,
-            sip_mas1 = false,
-            sip_mas2 = false,
-            sip_mas3 = false,
-            sip_mas4 = false,
+            sip_isk1 = financial.DiscountAmounts[0] > 0m,
+            sip_isk2 = financial.DiscountAmounts[1] > 0m,
+            sip_isk3 = financial.DiscountAmounts[2] > 0m,
+            sip_isk4 = financial.DiscountAmounts[3] > 0m,
+            sip_isk5 = financial.DiscountAmounts[4] > 0m,
+            sip_isk6 = financial.DiscountAmounts[5] > 0m,
+            sip_mas1 = financial.ExpenseAmounts[0] > 0m,
+            sip_mas2 = financial.ExpenseAmounts[1] > 0m,
+            sip_mas3 = financial.ExpenseAmounts[2] > 0m,
+            sip_mas4 = financial.ExpenseAmounts[3] > 0m,
             sip_iskonto1 = 0,
             sip_iskonto2 = 1,
             sip_iskonto3 = 1,

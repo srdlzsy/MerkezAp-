@@ -1,5 +1,6 @@
 using FurpaMerkezApi.Application.Modules.MalKabulIslemleri.MalKabuller.CompanyReceiving;
 using FurpaMerkezApi.Infrastructure.Modules.Common;
+using FurpaMerkezApi.Infrastructure.Modules.Common.PurchasePricing;
 using FurpaMerkezApi.Infrastructure.OfflineSync;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 
@@ -49,7 +50,17 @@ internal static class CompanyReceivingRecoveryMatcher
                 group => group.Key,
                 group => new Totals(
                     group.Sum(line => line.DispatchQuantity ?? line.Quantity),
-                    group.Sum(line => (line.DispatchQuantity ?? line.Quantity) * line.UnitPrice)));
+                    group.Sum(line =>
+                    {
+                        var quantity = line.DispatchQuantity ?? line.Quantity;
+                        var snapshot = line.PurchaseFinancial ?? PurchaseFinancialCalculator.FromNetUnitPrice(
+                            Convert.ToDecimal(line.UnitPrice),
+                            0,
+                            0m);
+                        return Convert.ToDouble(PurchaseFinancialCalculator.Calculate(
+                            snapshot,
+                            Convert.ToDecimal(quantity)).GrossAmount);
+                    })));
         var actual = rows
             .GroupBy(row => Key(
                 row.sth_stok_kod,

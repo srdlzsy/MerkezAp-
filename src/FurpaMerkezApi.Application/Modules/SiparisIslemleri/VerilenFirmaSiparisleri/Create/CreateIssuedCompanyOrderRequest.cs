@@ -1,4 +1,5 @@
 using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
+using FurpaMerkezApi.Application.Modules.Common.PurchasePricing;
 
 namespace FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.Create;
 
@@ -27,4 +28,5 @@ public sealed record CreateIssuedCompanyOrderLineRequest(
     string? PackageCode = null,
     string? ProjectCode = null,
     string? CustomerResponsibilityCenter = null,
-    string? ProductResponsibilityCenter = null);
+    string? ProductResponsibilityCenter = null,
+    PurchaseFinancialSnapshot? PurchaseFinancial = null);

@@ -68,6 +68,7 @@ using FurpaMerkezApi.Infrastructure.Modules.OperasyonIslemleri.DepoOperasyonPane
 using FurpaMerkezApi.Infrastructure.Modules.OperasyonIslemleri.FirmaEvrakTakibi;
 using FurpaMerkezApi.Infrastructure.Modules.OperasyonIslemleri.UrunDagilimlari;
 using FurpaMerkezApi.Infrastructure.Modules.Common;
+using FurpaMerkezApi.Infrastructure.Modules.Common.PurchasePricing;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.KasaCiroAktarimi;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.Common;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.DepolarArasiSevkler.Detail;
@@ -653,6 +654,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IGetBakeryProductionReportUseCase, GetBakeryProductionReportUseCase>();
         services.AddScoped<IListIssuedCompanyOrdersUseCase, ListIssuedCompanyOrdersUseCase>();
         services.AddScoped<IGetIssuedCompanyOrderDetailUseCase, GetIssuedCompanyOrderDetailUseCase>();
+        services.AddScoped<PurchaseFinancialSnapshotResolver>();
         services.AddScoped<ICreateIssuedCompanyOrderUseCase, CreateIssuedCompanyOrderUseCase>();
         services.AddScoped<IListIssuedCompanyOrderSupplierProductsUseCase, ListIssuedCompanyOrderSupplierProductsUseCase>();
         services.AddScoped<IListIssuedWarehouseOrdersUseCase, ListIssuedWarehouseOrdersUseCase>();
