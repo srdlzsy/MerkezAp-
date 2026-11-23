@@ -147,6 +147,16 @@ public static class PermissionCatalog
         AllWarehousesAction
     ];
 
+    private static readonly PermissionActionDefinition[] NewCashRegisterManagementActions =
+    [
+        ..ReadCreateUpdateDeleteActions,
+        new("genel-ayarlar", "Genel Ayarlar ve Fis Limitleri"),
+        new("odeme-yontemleri", "Odeme Yontemleri"),
+        new("yetki-matrisi", "Kasa Yetki Matrisi"),
+        new("musteri-ekrani", "Musteri Ekrani"),
+        new("hizli-tuslar", "Hizli Tus Gruplari ve Urunler")
+    ];
+
     private static readonly PermissionActionDefinition[] ReadUpdateActions =
     [
         PageAction,
@@ -298,7 +308,7 @@ public static class PermissionCatalog
         ..CreateMenuPermissions("ayar-islemleri", "AyarIslemleri", "b2b-ayarlari", "B2BAyarlari", ManageCrudDeleteActions),
         ..CreateMenuPermissions("ayar-islemleri", "AyarIslemleri", "veritabani-izleme", "VeritabaniIzleme", DatabaseMonitoringActions),
         ..CreateMenuPermissions("ayar-islemleri", "AyarIslemleri", "terminal-cihazlari", "TerminalCihazlari", TerminalInstallationActions),
-        ..CreateMenuPermissions("ayar-islemleri", "AyarIslemleri", "yeni-kasa-yonetimi", "YeniKasaYonetimi", ReadCreateUpdateDeleteActions),
+        ..CreateMenuPermissions("ayar-islemleri", "AyarIslemleri", "yeni-kasa-yonetimi", "YeniKasaYonetimi", NewCashRegisterManagementActions),
 
         ..CreateMenuPermissions("siparis-islemleri", "SiparisIslemleri", "alinan-depo-siparisleri", "AlinanDepoSiparisleri", CrudPrintActions),
         ..CreateMenuPermissions("siparis-islemleri", "SiparisIslemleri", "verilen-depo-siparisleri", "VerilenDepoSiparisleri"),

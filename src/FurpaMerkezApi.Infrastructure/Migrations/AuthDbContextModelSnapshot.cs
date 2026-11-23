@@ -997,6 +997,46 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                         },
                         new
                         {
+                            Id = new Guid("89120a3d-3cb2-d5f9-000d-dfcbd36ea53a"),
+                            Code = "ayar-islemleri.yeni-kasa-yonetimi.genel-ayarlar",
+                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "AyarIslemleri > YeniKasaYonetimi > Genel Ayarlar ve Fis Limitleri yetkisi.",
+                            Name = "YeniKasaYonetimi Genel Ayarlar ve Fis Limitleri"
+                        },
+                        new
+                        {
+                            Id = new Guid("497308f8-8e83-e638-ce6d-35b1add6e2cd"),
+                            Code = "ayar-islemleri.yeni-kasa-yonetimi.odeme-yontemleri",
+                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "AyarIslemleri > YeniKasaYonetimi > Odeme Yontemleri yetkisi.",
+                            Name = "YeniKasaYonetimi Odeme Yontemleri"
+                        },
+                        new
+                        {
+                            Id = new Guid("920d328a-1c39-4ef1-2deb-b300b59dd6bc"),
+                            Code = "ayar-islemleri.yeni-kasa-yonetimi.yetki-matrisi",
+                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "AyarIslemleri > YeniKasaYonetimi > Kasa Yetki Matrisi yetkisi.",
+                            Name = "YeniKasaYonetimi Kasa Yetki Matrisi"
+                        },
+                        new
+                        {
+                            Id = new Guid("23d464a2-ddd6-2db4-4f31-171daec15739"),
+                            Code = "ayar-islemleri.yeni-kasa-yonetimi.musteri-ekrani",
+                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "AyarIslemleri > YeniKasaYonetimi > Musteri Ekrani yetkisi.",
+                            Name = "YeniKasaYonetimi Musteri Ekrani"
+                        },
+                        new
+                        {
+                            Id = new Guid("32146628-0841-e939-0a3e-6db48ce0727e"),
+                            Code = "ayar-islemleri.yeni-kasa-yonetimi.hizli-tuslar",
+                            CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "AyarIslemleri > YeniKasaYonetimi > Hizli Tus Gruplari ve Urunler yetkisi.",
+                            Name = "YeniKasaYonetimi Hizli Tus Gruplari ve Urunler"
+                        },
+                        new
+                        {
                             Id = new Guid("4e698b19-0149-6804-a7a2-78aefb8ca4c3"),
                             Code = "siparis-islemleri.alinan-depo-siparisleri.page",
                             CreatedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc),
@@ -3930,6 +3970,36 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                         {
                             RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
                             PermissionId = new Guid("ce6f5dee-1d7b-a550-b588-7b27cdaee122"),
+                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
+                            PermissionId = new Guid("89120a3d-3cb2-d5f9-000d-dfcbd36ea53a"),
+                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
+                            PermissionId = new Guid("497308f8-8e83-e638-ce6d-35b1add6e2cd"),
+                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
+                            PermissionId = new Guid("920d328a-1c39-4ef1-2deb-b300b59dd6bc"),
+                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
+                            PermissionId = new Guid("23d464a2-ddd6-2db4-4f31-171daec15739"),
+                            AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            RoleId = new Guid("2ffb4f7d-b63d-4b12-8d74-e2a0aee2798a"),
+                            PermissionId = new Guid("32146628-0841-e939-0a3e-6db48ce0727e"),
                             AssignedAtUtc = new DateTime(2026, 4, 14, 0, 0, 0, 0, DateTimeKind.Utc)
                         },
                         new

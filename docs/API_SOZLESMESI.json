@@ -102820,6 +102820,7 @@
           }
         ],
         "x-permissions": [
+          "ayar-islemleri.yeni-kasa-yonetimi.genel-ayarlar",
           "ayar-islemleri.yeni-kasa-yonetimi.list"
         ]
       },
@@ -102897,6 +102898,7 @@
           }
         ],
         "x-permissions": [
+          "ayar-islemleri.yeni-kasa-yonetimi.genel-ayarlar",
           "ayar-islemleri.yeni-kasa-yonetimi.update"
         ]
       }
@@ -102993,6 +102995,7 @@
           }
         ],
         "x-permissions": [
+          "ayar-islemleri.yeni-kasa-yonetimi.genel-ayarlar",
           "ayar-islemleri.yeni-kasa-yonetimi.update"
         ]
       }
@@ -103070,6 +103073,7 @@
           }
         ],
         "x-permissions": [
+          "ayar-islemleri.yeni-kasa-yonetimi.genel-ayarlar",
           "ayar-islemleri.yeni-kasa-yonetimi.update"
         ]
       }
@@ -103156,7 +103160,8 @@
           }
         ],
         "x-permissions": [
-          "ayar-islemleri.yeni-kasa-yonetimi.list"
+          "ayar-islemleri.yeni-kasa-yonetimi.list",
+          "ayar-islemleri.yeni-kasa-yonetimi.odeme-yontemleri"
         ]
       },
       "put": {
@@ -103233,6 +103238,7 @@
           }
         ],
         "x-permissions": [
+          "ayar-islemleri.yeni-kasa-yonetimi.odeme-yontemleri",
           "ayar-islemleri.yeni-kasa-yonetimi.update"
         ]
       }
@@ -103310,7 +103316,8 @@
           }
         ],
         "x-permissions": [
-          "ayar-islemleri.yeni-kasa-yonetimi.list"
+          "ayar-islemleri.yeni-kasa-yonetimi.list",
+          "ayar-islemleri.yeni-kasa-yonetimi.odeme-yontemleri"
         ]
       }
     },
@@ -103389,6 +103396,7 @@
           }
         ],
         "x-permissions": [
+          "ayar-islemleri.yeni-kasa-yonetimi.odeme-yontemleri",
           "ayar-islemleri.yeni-kasa-yonetimi.update"
         ]
       }
@@ -103466,7 +103474,8 @@
           }
         ],
         "x-permissions": [
-          "ayar-islemleri.yeni-kasa-yonetimi.list"
+          "ayar-islemleri.yeni-kasa-yonetimi.list",
+          "ayar-islemleri.yeni-kasa-yonetimi.yetki-matrisi"
         ]
       },
       "put": {
@@ -103543,7 +103552,8 @@
           }
         ],
         "x-permissions": [
-          "ayar-islemleri.yeni-kasa-yonetimi.update"
+          "ayar-islemleri.yeni-kasa-yonetimi.update",
+          "ayar-islemleri.yeni-kasa-yonetimi.yetki-matrisi"
         ]
       }
     },
@@ -103622,7 +103632,8 @@
           }
         ],
         "x-permissions": [
-          "ayar-islemleri.yeni-kasa-yonetimi.update"
+          "ayar-islemleri.yeni-kasa-yonetimi.update",
+          "ayar-islemleri.yeni-kasa-yonetimi.yetki-matrisi"
         ]
       }
     },
@@ -103718,7 +103729,8 @@
           }
         ],
         "x-permissions": [
-          "ayar-islemleri.yeni-kasa-yonetimi.update"
+          "ayar-islemleri.yeni-kasa-yonetimi.update",
+          "ayar-islemleri.yeni-kasa-yonetimi.yetki-matrisi"
         ]
       }
     },
@@ -103804,7 +103816,8 @@
           }
         ],
         "x-permissions": [
-          "ayar-islemleri.yeni-kasa-yonetimi.list"
+          "ayar-islemleri.yeni-kasa-yonetimi.list",
+          "ayar-islemleri.yeni-kasa-yonetimi.musteri-ekrani"
         ]
       },
       "put": {
@@ -103881,6 +103894,7 @@
           }
         ],
         "x-permissions": [
+          "ayar-islemleri.yeni-kasa-yonetimi.musteri-ekrani",
           "ayar-islemleri.yeni-kasa-yonetimi.update"
         ]
       }
@@ -103976,7 +103990,8 @@
           }
         ],
         "x-permissions": [
-          "ayar-islemleri.yeni-kasa-yonetimi.list"
+          "ayar-islemleri.yeni-kasa-yonetimi.list",
+          "ayar-islemleri.yeni-kasa-yonetimi.musteri-ekrani"
         ]
       },
       "post": {
@@ -104070,7 +104085,8 @@
           }
         ],
         "x-permissions": [
-          "ayar-islemleri.yeni-kasa-yonetimi.create"
+          "ayar-islemleri.yeni-kasa-yonetimi.create",
+          "ayar-islemleri.yeni-kasa-yonetimi.musteri-ekrani"
         ]
       }
     },
@@ -104149,6 +104165,7 @@
           }
         ],
         "x-permissions": [
+          "ayar-islemleri.yeni-kasa-yonetimi.musteri-ekrani",
           "ayar-islemleri.yeni-kasa-yonetimi.update"
         ]
       }
@@ -104220,7 +104237,8 @@
           }
         ],
         "x-permissions": [
-          "ayar-islemleri.yeni-kasa-yonetimi.delete"
+          "ayar-islemleri.yeni-kasa-yonetimi.delete",
+          "ayar-islemleri.yeni-kasa-yonetimi.musteri-ekrani"
         ]
       }
     },
@@ -104389,6 +104407,7 @@
           }
         ],
         "x-permissions": [
+          "ayar-islemleri.yeni-kasa-yonetimi.hizli-tuslar",
           "ayar-islemleri.yeni-kasa-yonetimi.list"
         ]
       },
@@ -104483,7 +104502,8 @@
           }
         ],
         "x-permissions": [
-          "ayar-islemleri.yeni-kasa-yonetimi.create"
+          "ayar-islemleri.yeni-kasa-yonetimi.create",
+          "ayar-islemleri.yeni-kasa-yonetimi.hizli-tuslar"
         ]
       },
       "put": {
@@ -104560,6 +104580,7 @@
           }
         ],
         "x-permissions": [
+          "ayar-islemleri.yeni-kasa-yonetimi.hizli-tuslar",
           "ayar-islemleri.yeni-kasa-yonetimi.update"
         ]
       }
@@ -104631,7 +104652,8 @@
           }
         ],
         "x-permissions": [
-          "ayar-islemleri.yeni-kasa-yonetimi.delete"
+          "ayar-islemleri.yeni-kasa-yonetimi.delete",
+          "ayar-islemleri.yeni-kasa-yonetimi.hizli-tuslar"
         ]
       }
     },
@@ -104727,6 +104749,7 @@
           }
         ],
         "x-permissions": [
+          "ayar-islemleri.yeni-kasa-yonetimi.hizli-tuslar",
           "ayar-islemleri.yeni-kasa-yonetimi.list"
         ]
       }
@@ -104823,7 +104846,8 @@
           }
         ],
         "x-permissions": [
-          "ayar-islemleri.yeni-kasa-yonetimi.create"
+          "ayar-islemleri.yeni-kasa-yonetimi.create",
+          "ayar-islemleri.yeni-kasa-yonetimi.hizli-tuslar"
         ]
       }
     },
@@ -104894,7 +104918,8 @@
           }
         ],
         "x-permissions": [
-          "ayar-islemleri.yeni-kasa-yonetimi.delete"
+          "ayar-islemleri.yeni-kasa-yonetimi.delete",
+          "ayar-islemleri.yeni-kasa-yonetimi.hizli-tuslar"
         ]
       }
     },
@@ -105081,6 +105106,7 @@
           }
         ],
         "x-permissions": [
+          "ayar-islemleri.yeni-kasa-yonetimi.hizli-tuslar",
           "ayar-islemleri.yeni-kasa-yonetimi.list"
         ]
       }

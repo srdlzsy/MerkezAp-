@@ -17,17 +17,24 @@ public sealed class YeniKasaYonetimiController(IYeniKasaYonetimiService service)
     private const string CreatePolicy = "ayar-islemleri.yeni-kasa-yonetimi.create";
     private const string UpdatePolicy = "ayar-islemleri.yeni-kasa-yonetimi.update";
     private const string DeletePolicy = "ayar-islemleri.yeni-kasa-yonetimi.delete";
+    private const string GeneralSettingsPolicy = "ayar-islemleri.yeni-kasa-yonetimi.genel-ayarlar";
+    private const string PaymentMethodsPolicy = "ayar-islemleri.yeni-kasa-yonetimi.odeme-yontemleri";
+    private const string RoleMatrixPolicy = "ayar-islemleri.yeni-kasa-yonetimi.yetki-matrisi";
+    private const string CustomerDisplayPolicy = "ayar-islemleri.yeni-kasa-yonetimi.musteri-ekrani";
+    private const string FastAccessPolicy = "ayar-islemleri.yeni-kasa-yonetimi.hizli-tuslar";
 
     #region Genel Ayarlar & FTP Testi & Sync Push
 
     [HttpGet("genel-ayarlar")]
     [Authorize(Policy = ListPolicy)]
+    [Authorize(Policy = GeneralSettingsPolicy)]
     [ProducesResponseType(typeof(YeniKasaAppSettingsDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<YeniKasaAppSettingsDto?>> GetAppSettings(CancellationToken cancellationToken) =>
         Ok(await service.GetAppSettingsAsync(cancellationToken));
 
     [HttpPut("genel-ayarlar")]
     [Authorize(Policy = UpdatePolicy)]
+    [Authorize(Policy = GeneralSettingsPolicy)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> UpdateAppSettings(
         [FromBody] UpdateYeniKasaAppSettingsRequest request,
@@ -39,6 +46,7 @@ public sealed class YeniKasaYonetimiController(IYeniKasaYonetimiService service)
 
     [HttpPost("genel-ayarlar/test-ftp")]
     [Authorize(Policy = UpdatePolicy)]
+    [Authorize(Policy = GeneralSettingsPolicy)]
     [ProducesResponseType(typeof(TestFtpConnectionResultDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<TestFtpConnectionResultDto>> TestFtpConnection(
         [FromBody] TestFtpConnectionRequest request,
@@ -47,6 +55,7 @@ public sealed class YeniKasaYonetimiController(IYeniKasaYonetimiService service)
 
     [HttpPost("sync-push")]
     [Authorize(Policy = UpdatePolicy)]
+    [Authorize(Policy = GeneralSettingsPolicy)]
     [ProducesResponseType(typeof(SyncPushResultDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<SyncPushResultDto>> TriggerSyncPush(CancellationToken cancellationToken) =>
         Ok(await service.TriggerSyncPushAsync(cancellationToken));
@@ -57,18 +66,21 @@ public sealed class YeniKasaYonetimiController(IYeniKasaYonetimiService service)
 
     [HttpGet("odeme-yontemleri")]
     [Authorize(Policy = ListPolicy)]
+    [Authorize(Policy = PaymentMethodsPolicy)]
     [ProducesResponseType(typeof(IReadOnlyList<YeniKasaPaymentMethodDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyList<YeniKasaPaymentMethodDto>>> GetPaymentMethods(CancellationToken cancellationToken) =>
         Ok(await service.GetPaymentMethodsAsync(cancellationToken));
 
     [HttpGet("odeme-yontemleri/lookups")]
     [Authorize(Policy = ListPolicy)]
+    [Authorize(Policy = PaymentMethodsPolicy)]
     [ProducesResponseType(typeof(YeniKasaPaymentMethodLookupsDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<YeniKasaPaymentMethodLookupsDto>> GetPaymentMethodLookups(CancellationToken cancellationToken) =>
         Ok(await service.GetPaymentMethodLookupsAsync(cancellationToken));
 
     [HttpPut("odeme-yontemleri")]
     [Authorize(Policy = UpdatePolicy)]
+    [Authorize(Policy = PaymentMethodsPolicy)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> UpdatePaymentMethod(
         [FromBody] UpdateYeniKasaPaymentMethodRequest request,
@@ -80,6 +92,7 @@ public sealed class YeniKasaYonetimiController(IYeniKasaYonetimiService service)
 
     [HttpPut("odeme-yontemleri/siralama")]
     [Authorize(Policy = UpdatePolicy)]
+    [Authorize(Policy = PaymentMethodsPolicy)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> UpdatePaymentMethodsOrder(
         [FromBody] UpdatePaymentMethodsOrderRequest request,
@@ -95,12 +108,14 @@ public sealed class YeniKasaYonetimiController(IYeniKasaYonetimiService service)
 
     [HttpGet("yetki-matrisi")]
     [Authorize(Policy = ListPolicy)]
+    [Authorize(Policy = RoleMatrixPolicy)]
     [ProducesResponseType(typeof(YeniKasaRolePermissionMatrixDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<YeniKasaRolePermissionMatrixDto>> GetRolePermissionMatrix(CancellationToken cancellationToken) =>
         Ok(await service.GetRolePermissionMatrixAsync(cancellationToken));
 
     [HttpPut("yetki-matrisi")]
     [Authorize(Policy = UpdatePolicy)]
+    [Authorize(Policy = RoleMatrixPolicy)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> UpdateRolePermissions(
         [FromBody] UpdateRolePermissionsRequest request,
@@ -112,6 +127,7 @@ public sealed class YeniKasaYonetimiController(IYeniKasaYonetimiService service)
 
     [HttpPut("yetki-matrisi/toplu")]
     [Authorize(Policy = UpdatePolicy)]
+    [Authorize(Policy = RoleMatrixPolicy)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> BulkUpdateRolePermissions(
         [FromBody] BulkUpdateRolePermissionsRequest request,
@@ -123,6 +139,7 @@ public sealed class YeniKasaYonetimiController(IYeniKasaYonetimiService service)
 
     [HttpPost("yetki-matrisi/kopyala")]
     [Authorize(Policy = UpdatePolicy)]
+    [Authorize(Policy = RoleMatrixPolicy)]
     [ProducesResponseType(typeof(CopyRolePermissionsResultDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<CopyRolePermissionsResultDto>> CopyRolePermissions(
         [FromBody] CopyRolePermissionsRequest request,
@@ -135,12 +152,14 @@ public sealed class YeniKasaYonetimiController(IYeniKasaYonetimiService service)
 
     [HttpGet("musteri-ekrani/ayarlar")]
     [Authorize(Policy = ListPolicy)]
+    [Authorize(Policy = CustomerDisplayPolicy)]
     [ProducesResponseType(typeof(IReadOnlyList<YeniKasaDisplaySettingsDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyList<YeniKasaDisplaySettingsDto>>> GetDisplaySettings(CancellationToken cancellationToken) =>
         Ok(await service.GetDisplaySettingsAsync(cancellationToken));
 
     [HttpPut("musteri-ekrani/ayarlar")]
     [Authorize(Policy = UpdatePolicy)]
+    [Authorize(Policy = CustomerDisplayPolicy)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> UpdateDisplaySettings(
         [FromBody] UpdateYeniKasaDisplaySettingsRequest request,
@@ -152,6 +171,7 @@ public sealed class YeniKasaYonetimiController(IYeniKasaYonetimiService service)
 
     [HttpGet("musteri-ekrani/icerikler")]
     [Authorize(Policy = ListPolicy)]
+    [Authorize(Policy = CustomerDisplayPolicy)]
     [ProducesResponseType(typeof(IReadOnlyList<YeniKasaDisplayContentDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyList<YeniKasaDisplayContentDto>>> GetDisplayContents(
         [FromQuery] string? pageType,
@@ -160,6 +180,7 @@ public sealed class YeniKasaYonetimiController(IYeniKasaYonetimiService service)
 
     [HttpPost("musteri-ekrani/icerikler")]
     [Authorize(Policy = CreatePolicy)]
+    [Authorize(Policy = CustomerDisplayPolicy)]
     [ProducesResponseType(typeof(YeniKasaDisplayContentDto), StatusCodes.Status201Created)]
     public async Task<ActionResult<YeniKasaDisplayContentDto>> CreateDisplayContent(
         [FromBody] CreateYeniKasaDisplayContentRequest request,
@@ -171,6 +192,7 @@ public sealed class YeniKasaYonetimiController(IYeniKasaYonetimiService service)
 
     [HttpPut("musteri-ekrani/siralama")]
     [Authorize(Policy = UpdatePolicy)]
+    [Authorize(Policy = CustomerDisplayPolicy)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> UpdateDisplayContentsOrder(
         [FromBody] UpdateDisplayContentsOrderRequest request,
@@ -182,6 +204,7 @@ public sealed class YeniKasaYonetimiController(IYeniKasaYonetimiService service)
 
     [HttpDelete("musteri-ekrani/icerikler/{id:int}")]
     [Authorize(Policy = DeletePolicy)]
+    [Authorize(Policy = CustomerDisplayPolicy)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> DeleteDisplayContent(int id, CancellationToken cancellationToken)
     {
@@ -207,12 +230,14 @@ public sealed class YeniKasaYonetimiController(IYeniKasaYonetimiService service)
 
     [HttpGet("hizli-tus/kategoriler")]
     [Authorize(Policy = ListPolicy)]
+    [Authorize(Policy = FastAccessPolicy)]
     [ProducesResponseType(typeof(IReadOnlyList<YeniKasaFastAccessCategoryDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyList<YeniKasaFastAccessCategoryDto>>> GetFastAccessCategories(CancellationToken cancellationToken) =>
         Ok(await service.GetFastAccessCategoriesAsync(cancellationToken));
 
     [HttpPost("hizli-tus/kategoriler")]
     [Authorize(Policy = CreatePolicy)]
+    [Authorize(Policy = FastAccessPolicy)]
     [ProducesResponseType(typeof(YeniKasaFastAccessCategoryDto), StatusCodes.Status201Created)]
     public async Task<ActionResult<YeniKasaFastAccessCategoryDto>> CreateFastAccessCategory(
         [FromBody] CreateFastAccessCategoryRequest request,
@@ -224,6 +249,7 @@ public sealed class YeniKasaYonetimiController(IYeniKasaYonetimiService service)
 
     [HttpPut("hizli-tus/kategoriler")]
     [Authorize(Policy = UpdatePolicy)]
+    [Authorize(Policy = FastAccessPolicy)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> UpdateFastAccessCategory(
         [FromBody] UpdateFastAccessCategoryRequest request,
@@ -235,6 +261,7 @@ public sealed class YeniKasaYonetimiController(IYeniKasaYonetimiService service)
 
     [HttpDelete("hizli-tus/kategoriler/{id:int}")]
     [Authorize(Policy = DeletePolicy)]
+    [Authorize(Policy = FastAccessPolicy)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> DeleteFastAccessCategory(int id, CancellationToken cancellationToken)
     {
@@ -244,6 +271,7 @@ public sealed class YeniKasaYonetimiController(IYeniKasaYonetimiService service)
 
     [HttpGet("hizli-tus/urunler/{categoryKey}")]
     [Authorize(Policy = ListPolicy)]
+    [Authorize(Policy = FastAccessPolicy)]
     [ProducesResponseType(typeof(IReadOnlyList<YeniKasaFastAccessItemDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyList<YeniKasaFastAccessItemDto>>> GetFastAccessItems(
         string categoryKey,
@@ -252,6 +280,7 @@ public sealed class YeniKasaYonetimiController(IYeniKasaYonetimiService service)
 
     [HttpPost("hizli-tus/urunler")]
     [Authorize(Policy = CreatePolicy)]
+    [Authorize(Policy = FastAccessPolicy)]
     [ProducesResponseType(typeof(YeniKasaFastAccessItemDto), StatusCodes.Status201Created)]
     public async Task<ActionResult<YeniKasaFastAccessItemDto>> CreateFastAccessItem(
         [FromBody] CreateFastAccessItemRequest request,
@@ -263,6 +292,7 @@ public sealed class YeniKasaYonetimiController(IYeniKasaYonetimiService service)
 
     [HttpDelete("hizli-tus/urunler/{id:int}")]
     [Authorize(Policy = DeletePolicy)]
+    [Authorize(Policy = FastAccessPolicy)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> DeleteFastAccessItem(int id, CancellationToken cancellationToken)
     {
@@ -284,6 +314,7 @@ public sealed class YeniKasaYonetimiController(IYeniKasaYonetimiService service)
 
     [HttpGet("stok-ara")]
     [Authorize(Policy = ListPolicy)]
+    [Authorize(Policy = FastAccessPolicy)]
     [ProducesResponseType(typeof(IReadOnlyList<YeniKasaStockLookupDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyList<YeniKasaStockLookupDto>>> SearchStocks(
         [FromQuery] string q,
