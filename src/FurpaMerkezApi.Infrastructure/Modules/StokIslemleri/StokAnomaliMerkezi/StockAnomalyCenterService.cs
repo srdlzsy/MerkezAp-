@@ -17,6 +17,7 @@ public sealed class StockAnomalyCenterService(
     ILogger<StockAnomalyCenterService> logger)
     : IStockAnomalyCenterService
 {
+    internal const int MaxInteractiveScanDays = 31;
     private const double QuantityTolerance = 0.000001d;
     private const int UpsertRetryCount = 3;
     private static readonly SemaphoreSlim UpsertLock = new(1, 1);
@@ -1348,6 +1349,8 @@ public sealed class StockAnomalyCenterService(
             throw new ArgumentException("End date can not be earlier than start date.");
         }
 
+        ValidateInteractiveScanDateRange(startDate, endDate);
+
         var dormantDays = Math.Clamp(request.DormantDays, 1, 3650);
         var pendingTransferHours = Math.Clamp(request.PendingTransferHours, 1, 24 * 30);
         var lookbackDays = Math.Clamp(request.HighQuantityLookbackDays, 1, 365);
@@ -1368,6 +1371,16 @@ public sealed class StockAnomalyCenterService(
             multiplier,
             minimum,
             takePerRule);
+    }
+
+    internal static void ValidateInteractiveScanDateRange(DateTime startDate, DateTime endDate)
+    {
+        var requestedDayCount = (endDate.Date - startDate.Date).Days + 1;
+        if (requestedDayCount > MaxInteractiveScanDays)
+        {
+            throw new ArgumentException(
+                $"Interactive stock anomaly scans can cover at most {MaxInteractiveScanDays} days.");
+        }
     }
 
     private static StockAnomalyDetailDto ToDetail(StockAnomaly anomaly) =>

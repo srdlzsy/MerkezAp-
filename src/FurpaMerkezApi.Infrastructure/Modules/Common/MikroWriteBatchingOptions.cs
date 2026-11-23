@@ -16,5 +16,9 @@ public sealed class MikroWriteBatchingOptions
 
     public bool VirmanEnabled { get; init; }
 
+    public bool AxataEnabled { get; init; }
+
+    public bool GreenGrocerReceivingEnabled { get; init; }
+
     public int BulkCopyTimeoutSeconds { get; init; } = 300;
 }

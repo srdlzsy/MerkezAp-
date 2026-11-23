@@ -718,9 +718,6 @@ public sealed class CreateWarehouseReturnUseCase(
         var orderDate = movementDate;
         var deliveryDate = movementDate;
         var documentSerie = $"F{request.TargetWarehouseNo}";
-        var documentOrderNo = await GetNextWarehouseOrderDocumentOrderNoAsync(
-            documentSerie,
-            cancellationToken);
         var orderRequest = new CreateIssuedWarehouseOrderRequest(
             request.TargetWarehouseNo,
             request.SourceWarehouseNo,
@@ -739,13 +736,41 @@ public sealed class CreateWarehouseReturnUseCase(
                     row.Line.ProjectCode,
                     row.Line.ProductResponsibilityCenter))
                 .ToArray());
+        var traceParts = ResolveOfflineTraceParts(request.ClientRequestId);
+
+        await using var sequenceLock = await MikroDocumentSequenceLock.AcquireAsync(
+            mikroWriteDbContext,
+            "IssuedWarehouseOrder",
+            documentSerie,
+            cancellationToken);
+        var existingOrderLines = await TryRecoverMikroApiAutomaticWarehouseOrderLineGuidsByTraceAsync(
+            orderRequest,
+            automaticRows,
+            traceParts,
+            cancellationToken);
+        if (existingOrderLines is not null)
+        {
+            logger.LogInformation(
+                "Existing automatic warehouse order for warehouse return was recovered by client request trace. InWarehouseNo={InWarehouseNo}, OutWarehouseNo={OutWarehouseNo}, LineCount={LineCount}",
+                orderRequest.InWarehouseNo,
+                orderRequest.OutWarehouseNo,
+                existingOrderLines.Count);
+            return existingOrderLines;
+        }
+
+        var documentOrderNo = await GetNextWarehouseOrderDocumentOrderNoAsync(
+            documentSerie,
+            cancellationToken);
         var payload = IssuedWarehouseOrderMikroApiPayloadFactory.Create(
             orderRequest,
             orderRequest.Lines,
             orderDate,
             deliveryDate,
             documentSerie,
-            documentOrderNo);
+            documentOrderNo,
+            "0",
+            traceParts.First,
+            traceParts.Second);
 
         logger.LogInformation(
             "Automatic warehouse order for warehouse return is routed to Mikro API {Path}. DocumentSerie={DocumentSerie}, DocumentOrderNo={DocumentOrderNo}, InWarehouseNo={InWarehouseNo}, OutWarehouseNo={OutWarehouseNo}, LineCount={LineCount}",
@@ -791,6 +816,48 @@ public sealed class CreateWarehouseReturnUseCase(
             cancellationToken: cancellationToken);
 
         return recovered;
+    }
+
+    private async Task<Dictionary<int, Guid>?> TryRecoverMikroApiAutomaticWarehouseOrderLineGuidsByTraceAsync(
+        CreateIssuedWarehouseOrderRequest orderRequest,
+        IReadOnlyCollection<AutomaticWarehouseOrderRow> expectedRows,
+        (string First, string Second, string Third) traceParts,
+        CancellationToken cancellationToken)
+    {
+        var documentKeys = await mikroWriteDbContext.DEPOLAR_ARASI_SIPARISLERs
+            .AsNoTracking()
+            .Where(order =>
+                order.ssip_girdepo == orderRequest.InWarehouseNo &&
+                order.ssip_cikdepo == orderRequest.OutWarehouseNo &&
+                order.ssip_special2 == traceParts.First &&
+                order.ssip_special3 == traceParts.Second)
+            .Select(order => new
+            {
+                order.ssip_evrakno_seri,
+                order.ssip_evrakno_sira
+            })
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        if (documentKeys.Count == 0)
+        {
+            return null;
+        }
+
+        if (documentKeys.Count != 1 ||
+            string.IsNullOrWhiteSpace(documentKeys[0].ssip_evrakno_seri) ||
+            !documentKeys[0].ssip_evrakno_sira.HasValue)
+        {
+            throw StockMovementRecoveryMatcher.ContentMismatch();
+        }
+
+        return await TryRecoverMikroApiAutomaticWarehouseOrderLineGuidsAsync(
+                documentKeys[0].ssip_evrakno_seri!,
+                documentKeys[0].ssip_evrakno_sira!.Value,
+                orderRequest,
+                expectedRows,
+                cancellationToken)
+            ?? throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
     }
 
     private async Task<Dictionary<int, Guid>> RecoverMikroApiAutomaticWarehouseOrderLineGuidsAsync(
@@ -1220,6 +1287,18 @@ public sealed class CreateWarehouseReturnUseCase(
 
     private static string ResolveOfflineTraceKey(Guid? clientRequestId) =>
         clientRequestId.HasValue ? MobileOfflineSyncService.ToTraceKey(clientRequestId.Value) : string.Empty;
+
+    private static (string First, string Second, string Third) ResolveOfflineTraceParts(
+        Guid? clientRequestId)
+    {
+        if (!clientRequestId.HasValue)
+        {
+            return ("0", string.Empty, string.Empty);
+        }
+
+        var traceKey = MobileOfflineSyncService.ToTraceKey(clientRequestId.Value)[..12];
+        return (traceKey[..4], traceKey[4..8], traceKey[8..12]);
+    }
 
     private sealed record AutomaticWarehouseOrderRow(
         int OriginalRowNo,

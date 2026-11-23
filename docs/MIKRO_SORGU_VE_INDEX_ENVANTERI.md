@@ -2,9 +2,12 @@
 
 Bu dokuman, Furpa Merkez API'nin Mikro uzerindeki liste, detay ve create sonrasi
 read-back sorgularini; bu sorgulari destekleyen indexleri ve `NOLOCK` politikasini
-tek yerde toplar. Canli envanter 05.11.2026 tarihinde
-`MikroDesktop_FURPA_2024`, `Furpa`, `FurpaMerkezDb` ve `SHOPIGO`
-veritabanlarinda salt okunur sorgularla dogrulanmistir.
+tek yerde toplar. Son canli kontrol 23.11.2026 tarihinde
+`MikroDesktop_FURPA_2024`, `Furpa` ve `FurpaMerkezDb` veritabanlarinda
+salt okunur sorgularla dogrulanmistir.
+
+Tek yurutulebilir index kaynagi: `docs/UYGULAMA_INDEXLERI.sql`.
+Parcali/eski index SQL dosyalari kullanilmaz.
 
 ## Kisa Sonuc
 
@@ -118,6 +121,7 @@ uzun donem kullanim karari icin tek basina yeterli degildir.
 | `IX_FR_STH_StokFisi_Liste` | STOK_HAREKETLERI | 267.2 | 30 / 0 | Zayiat/masraf listesi | Aktif |
 | `IX_FR_STH_StokFisi_Trace` | STOK_HAREKETLERI | 112.9 | 0 / 0 | Zayiat/masraf recovery | Aktif, kisa sayac penceresi |
 | `IX_FR_STH_Virman_Liste` | STOK_HAREKETLERI | 61.7 | 11 / 0 | Virman listesi | Aktif |
+| `IX_FR_STH_AXATA_G01_SipUid` | STOK_HAREKETLERI | Canli sorgudan okunur | Yeni | AXATA G01 siparis GUID read-back | Aktif |
 | `IX_FR_DAS_GirisTarih_Liste` | DEPOLAR_ARASI_SIPARISLER | 825.2 | 46 / 0 | Verilen depo siparisi | Aktif |
 | `IX_FR_DAS_CikisTarih_Liste` | DEPOLAR_ARASI_SIPARISLER | 824.8 | 14 / 0 | Alinan depo siparisi | Aktif |
 | `IX_Furpa_SafeCreateTrace_WarehouseOrder` | DEPOLAR_ARASI_SIPARISLER | 607.5 | 0 / 0 | Depo siparisi trace | Aktif, kisa sayac penceresi |
@@ -150,60 +154,38 @@ Mikro'nun mevcut standart indexlerinden uygulamanin kritik olarak kullandiklari:
 | FurpaMerkezDb | `IX_edespatch_submissions_status_next_attempt_at_utc` | Aktif; worker kuyrugu |
 | FurpaMerkezDb | `IX_edespatch_submissions_uuid` | Aktif, unique; e-belge UUID |
 
-## Hazir Fakat Uygulanmamasi Gereken Oneriler
+## Tek Index Katalogu
 
-Asagidaki scriptler kaynakta bulunur ancak canli envanter mevcut indexlerin ayni
-erisim yolunu zaten karsiladigini gosterdigi icin topluca calistirilmamalidir:
+`UYGULAMA_INDEXLERI.sql` su uc veritabanindaki uygulama indexlerini tek dosyada
+tutar:
 
-- `FATURA_GONDERIMI_LISTE_INDEXLERI.sql`: `NDX_STOK_HAREKETLERI_07` ve
-  `NDX_CARI_HESAP_ADRESLERI_02` zaten aktif. `IX_FR_CHH_FaturaGonderimi_Liste`
-  ise 62 milyondan fazla satirli tabloda plan olcumu olmadan cok genis olur.
-- `YENI_KASA_CIRO_INDEXLERI.sql`: SHOPIGO tarafinda ayni lookup yollarini
-  kullanan mevcut indexler var; yeni Furpa indexleri canlida olusturulmamis.
+| Veritabani | Kapsam |
+|---|---|
+| `MikroDesktop_FURPA_2024` | Firma/depo hareket listeleri, safe-create, read-back, AXATA G01 ve etiket sorgulari |
+| `Furpa` | Kasa icmal, banknot, hediye ceki ve kasa/POS odeme tipi sorgulari |
+| `FurpaMerkezDb` | E-irsaliye gonderim kuyrugu |
 
-Muhasebe duzeltme scriptlerindeki `#Journal`, `#Line`, `#Plan` gibi gecici tablo
-indexleri bu envantere dahil degildir; yalniz script calistigi oturum boyunca
-yasarlar ve uygulama sorgularina hizmet etmezler.
+Script idempotenttir. Mevcut indexi adiyla kontrol eder; veri ve prosedur
+degistirmez. `ONLINE = ON`, dusuk `MAXDOP`, dusuk deadlock onceligi ve sinirli
+lock beklemesi kullanir. Buyuk Mikro tablolarinda yine de CPU, IO ve transaction
+log maliyeti olacagi icin yalniz dusuk trafik saatinde calistirilir.
 
-## Yurutulebilir Script Kaynaklari
+Fatura gonderimi ve SHOPIGO icin daha once hazirlanan ancak canlida ihtiyaci
+kanitlanmayan genis index onerileri katalogdan kaldirildi. Mikro'nun
+`NDX_STOK_HAREKETLERI_07`, `NDX_CARI_HESAP_ADRESLERI_02` ve SHOPIGO'nun mevcut
+indexleri bu yollar icin yeterlidir. Yeni index ancak gercek execution plan,
+tekrar eden sorgu ve olculmus logical-read kaniti ile eklenir.
 
-Bu MD karar ve envanter kaynagidir; DDL calistirmak icin asagidaki SQL dosyalari
-kullanilir:
-
-| SQL dosyasi | Kapsam | Not |
-|---|---|---|
-| `STOK_HAREKETLERI_LISTE_INDEXLERI.sql` | Firma, sevk, stok fisi ve virman liste indexleri | Ana ve guncel liste scripti |
-| `STOK_HAREKETLERI_FIRMA_MAL_KABUL_TRACE_INDEX.sql` | Firma mal kabul trace | Ana scriptte de ayni isim kontrol edilir; ikisini art arda calistirmak gerekmez |
-| `STOK_HAREKETLERI_DEPO_SEVK_ACIL_INDEXLERI.sql` | Depo sevk trace ve duplicate | Read-back/duplicate icin |
-| `STOK_HAREKETLERI_STOK_FISI_ACIL_INDEXLERI.sql` | Stok fisi trace/liste | Ana liste scriptiyle ortak index adlari vardir; `IF NOT EXISTS` korumali |
-| `DEPOLAR_ARASI_SIPARISLER_LISTE_INDEXLERI.sql` | Depo siparisi iki yonlu liste | Canlida uygulanmis |
-| `SIPARISLER_SAFE_CREATE_READBACK_INDEXLERI.sql` | Depo ve firma siparisi trace | Canlida uygulanmis |
-| `MIKRO_DESKTOP_ACIL_PERFORMANS_INDEXLERI.sql` | Icmal, banknot, hediye ceki, etiket ve siparis baglantisi | Mikro ve Furpa tablolarina gore bolum bolum uygulanir |
-| `MIGRATE_CASH_REGISTER_DETAILS_PAYMENT_TYPE_NO.sql` | Kasa/POS odeme tipi lookup | Furpa DB migration scripti |
-| `DEPLOY_EDESPATCH_SUBMISSIONS.sql` | E-belge worker indexleri | FurpaMerkezDb |
-| `FATURA_GONDERIMI_LISTE_INDEXLERI.sql` | Fatura listesi onerileri | Su anda topluca uygulanmaz |
-| `YENI_KASA_CIRO_INDEXLERI.sql` | SHOPIGO ciro onerileri | Su anda uygulanmaz |
+Muhasebe duzeltme scriptlerindeki gecici tablo indexleri bu katalogda yer almaz;
+yalniz ilgili duzeltme oturumu boyunca yasarlar.
 
 ## Uygulama ve Izleme
 
-1. `STOK_HAREKETLERI_LISTE_INDEXLERI.sql` 05.11.2026 tarihinde canlida
-   calistirildi. Ilk deneme 5 saniyelik lock timeout ile guvenli bicimde durdu;
-   aktif transaction tamamlandiktan sonraki ikinci deneme basarili oldu.
-2. Mevcut firma liste indexleri `DROP_EXISTING = ON`, `ONLINE = ON` ve
-   `MAXDOP = 1` ile upgrade edilir. Canli SQL Server 2017 RTM, `CREATE INDEX`
-   icinde `WAIT_AT_LOW_PRIORITY` kabul etmedigi icin script `LOCK_TIMEOUT = 5000`
-   ve dusuk deadlock onceligi kullanir. Kilit 5 saniyede alinamazsa index islemi
-   hata vererek biter ve sakin bir zamanda yeniden calistirilir.
-3. Uygulama sonrasinda iki indexte `sth_satirno` kolonunun include olarak
-   bulundugu, indexlerin etkin ve filtered oldugu dogrulandi.
-4. `IX_FR_STH_DepoIade_Trace`, depo iadesi recovery sorgusundaki 180 saniyelik
-   taramayi kaldirmak icin 20.11.2026 tarihinde canli Mikro veritabaninda
-   uygulandi ve etkin oldugu dogrulandi.
-5. Firma mal kabul, firma sevk/iade ve virman liste endpointlerinin sureleri;
-   SQL logical read ve timeout loglari en az bir is gunu izlenir.
-6. Yeni index ancak gercek execution plan, tekrar eden seek ve olculmus logical
-   read kaniti varsa eklenir. Missing-index DMV tek basina yeterli degildir.
-
-Not: Microsoft dokumani yeni surumlerde `CREATE INDEX ... WAIT_AT_LOW_PRIORITY`
-soz dizimini gosterir; ancak canli 14.0.1000.169 parser testi bu secenegi
-`CREATE INDEX` icin reddetmistir. Script canli motor davranisina gore yazilmistir.
+1. `docs/UYGULAMA_INDEXLERI.sql` SSMS veya sqlcmd ile 10.0.0.207 sunucusunda
+   dusuk trafik saatinde calistirilir.
+2. Script sonundaki tek rapor sonucu `is_disabled = 0` olacak sekilde kontrol
+   edilir.
+3. Liste endpoint sureleri, timeout loglari, logical read, SQL CPU/IO ve disk
+   kullanimi en az bir is gunu izlenir.
+4. Faydasi kanitlanmayan index kaldirilacaksa once kullanim sayaci ve execution
+   plan saklanir; yalniz index kaldirilir, tablo verisine dokunulmaz.

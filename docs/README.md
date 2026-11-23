@@ -1,135 +1,75 @@
-# FurpaMerkezApi Dokumantasyon
+# FurpaMerkezApi Dokuman Haritasi
 
-Bu klasor, `FurpaMerkezApi` projesindeki teknik ve operasyonel dokumanlarin
-toplandigi ana yerdir. Koddaki ana uygulama `.NET 9` Web API olarak calisir ve
-iki temel veritabani kullanir:
+Bu klasorde yalniz guncel sozlesmeler, teknik referanslar, modul ozetleri,
+operasyon rehberleri ve kontrollu veri duzeltme kayitlari tutulur. Ayni isi
+yapan parcali index dosyalari kaldirilmistir.
 
-- `FurpaMerkezDb` (`PostgreSQL`): login, register, rol, yetki ve merkez uygulama verileri.
-- `MikroDesktop_FURPA_2024` (`SQL Server`): canli stok, cari, fatura, sevk, siparis ve operasyonel Mikro verileri. Eski `MikroDB_V16_FURPA_2024` hedefinden gecis ve geri donus adimlari ayri rehberdedir.
+## Ana Kaynaklar
 
-## Hizli Baslangic
+| Kaynak | Amac |
+|---|---|
+| `API_SOZLESMESI.json` | Uygulamanin makine tarafindan okunabilir guncel API sozlesmesi |
+| `API_SOZLESME_REFERANSI.md` | Endpoint ve model referansi |
+| `UI_API_DOKUMANI.md` | Angular/terminal entegrasyon davranislari |
+| `PROJE_GENEL_ISLEYISI.md` | Katmanlar, veri sahipligi ve temel isleyis |
+| `GELISTIRICI_DEVAM_REHBERI.md` | Gelistirme, test, migration ve yayin adimlari |
+| `CANLIYA_GECIS_KONTROL_LISTESI.md` | Yayin oncesi ve sonrasi kontroller |
 
-Repo kokunden:
+## Index Ve SQL Performansi
+
+| Kaynak | Amac |
+|---|---|
+| `UYGULAMA_INDEXLERI.sql` | Kullanilan tum ozel SQL Server indexlerinin tek idempotent kurulum dosyasi |
+| `MIKRO_SORGU_VE_INDEX_ENVANTERI.md` | Sorgu erisim yollari, NOLOCK karari, aktif indexler ve kullanim aciklamasi |
+| `SQL_PERFORMANS_TESPIT_SORGULARI.md` | Salt okunur performans tespit sorgulari |
+| `MIKRO_STOK_HAREKETLERI_KILIT_ANALIZI.md` | STOK_HAREKETLERI kilit ve yazma maliyeti analizi |
+
+`UYGULAMA_INDEXLERI.sql` disinda yeni kalici index SQL dosyasi acilmaz. Yeni bir
+index gerekiyorsa once execution plan ve logical-read kaniti bu envantere
+eklenir, sonra ana kataloga idempotent bolum olarak yazilir.
+
+## Modul Ozetleri
+
+- AXATA: `AXATA_ENTEGRASYON_ALTYAPISI.md`, `AXATA_WORKER_GOREVLERI.md`
+- Firma/depo mal kabul: `FIRMA_MAL_KABUL_SENARYO.md`, `DEPO_MAL_KABUL_ISLEYIS.md`
+- Siparis: `DEPO_ONERILEN_SIPARIS.md`, `FIRMA_ONERILEN_SIPARIS.md`
+- Kasa: `KASA_HAREKET_AKTARIMI_MUHASEBE_AKISI.md`,
+  `KASA_POS_BANKA_ICMAL_VERI_AKISI.md`,
+  `KASA_SAYIMI_ICMAL_YETKI_Z_RAPORU_REHBERI.md`
+- Manav: `MANAV_MAL_KABUL_VE_ETIKET_API.md`,
+  `MANAV_OPERASYON_PANELI.md`, `MANAV_KASA_SIPARIS_SEVK_AKISI.md`
+- Fatura/e-belge: `FATURA_GONDERIM_SISTEMI.md`,
+  `E_FATURA_E_IRSALIYE_SERVIS_DOKUMANI.md`, `UBL_FATURA_MANTIGI.md`
+- Trendyol Go: `TRENDYOL_GO_ENTEGRASYONU.md`
+- Operasyon ve stok: `OPERASYON_ISLEMLERI_DETAYLI_API_DOKUMANI.md`,
+  `DEPO_OPERASYON_PANELI_VERI_KAYNAKLARI.md`, `STOK_ANOMALI_MERKEZI.md`
+- Raporlama: `rapor-modulu-envanter.md`
+
+## Teknik Referanslar
+
+- Mikro: `MIKRO_DESKTOP_GECIS_REHBERI.md`, `MIKRO_PROSEDUR_ANALIZI.md`,
+  `MIKRO_REST_API_GECIS_ANALIZI.md`, `MIKRO_API_POSTMAN_DOKUMANI.md`
+- Veri ve bagimsizlik: `AUTH_DB_TABLO_ONCELIKLERI_VE_MIKRO_BAGIMSIZLIK_PLANI.md`
+- Barkod ve arama: `BARKOD_COZUMLEME_VE_ARAMA_REHBERI.md`
+- Yetki: `YENI_MENU_YETKI_MIGRATION_REHBERI.md`
+- Guvenli create: `TERMINAL_GUVENLI_CREATE_AKISI.md`
+- Harici kaynak: `DIGER_PROJE_ISLEM_REFERANSI.md`
+
+## Operasyon Ve Tarihsel SQL
+
+`OPERASYON_HIZLI_MUDAHALE.md` canli sorunlarda ilk bakilacak rehberdir.
+
+Tarih veya konu adi tasiyan `MIGRATE_*`, `DEPLOY_*`, `MIKRO_BIRIM_POINTER_*`
+ve `MUHASEBE_FISLERI_*` SQL dosyalari kalici index katalogu degildir. Bunlar
+uygulanmis veri/schema duzeltmelerinin denetlenebilir gecmisidir; otomatik veya
+toplu bicimde yeniden calistirilmaz.
+
+## Temel Komutlar
 
 ```powershell
 dotnet build FurpaMerkezApi.sln
+dotnet test --no-build
 dotnet run --project src/FurpaMerkezApi.WebApi --launch-profile http
 ```
 
-Swagger:
-
-```text
-http://localhost:5228/swagger
-```
-
-## Nereden Baslamali?
-
-Projeyi genel anlamak icin once su sirayla okunmasi onerilir:
-
-1. [PROJE_GENEL_ISLEYISI.md](PROJE_GENEL_ISLEYISI.md)
-2. [GELISTIRICI_DEVAM_REHBERI.md](GELISTIRICI_DEVAM_REHBERI.md)
-3. [UI_API_DOKUMANI.md](UI_API_DOKUMANI.md)
-4. [YENI_MENU_YETKI_MIGRATION_REHBERI.md](YENI_MENU_YETKI_MIGRATION_REHBERI.md)
-5. [OPERASYON_HIZLI_MUDAHALE.md](OPERASYON_HIZLI_MUDAHALE.md)
-
-## Dokuman Haritasi
-
-### Genel Proje Ve Yetki
-
-| Dokuman | Icerik |
-| --- | --- |
-| [PROJE_GENEL_ISLEYISI.md](PROJE_GENEL_ISLEYISI.md) | Projenin genel mimarisi, katmanlari, istek akisi, veri sahipligi, kalici guvenli create/recovery yapisi ve gelistirme standartlari. |
-| [GELISTIRICI_DEVAM_REHBERI.md](GELISTIRICI_DEVAM_REHBERI.md) | Projeyi devralip gelistirmeye devam etmek icin gunluk komutlar, yeni modul akisi, migration, test ve commit rehberi. |
-| [UI_API_DOKUMANI.md](UI_API_DOKUMANI.md) | Frontend/UI entegrasyonu icin API endpointleri ve response modelleri. |
-| [YENI_MENU_YETKI_MIGRATION_REHBERI.md](YENI_MENU_YETKI_MIGRATION_REHBERI.md) | Yeni menu/API eklerken yetki katalogu, migration ve policy adimlari. |
-| [KASA_SAYIMI_ICMAL_YETKI_Z_RAPORU_REHBERI.md](KASA_SAYIMI_ICMAL_YETKI_Z_RAPORU_REHBERI.md) | Kasa Sayimlari, Icmal Kaydi Girisi, depo yetkisi, update/delete ve Z raporu Mikro yazim rehberi. |
-| [PRODUCTION_HAZIRLIK.md](PRODUCTION_HAZIRLIK.md) | Production hazirlik ve canliya alma notlari. |
-| [MIKRO_DESKTOP_GECIS_REHBERI.md](MIKRO_DESKTOP_GECIS_REHBERI.md) | Mikro Desktop veritabanina kontrollu gecis, harici Mikro API eslemesi, Furpa prosedur referanslari, dogrulama ve geri donus adimlari. |
-
-### Operasyon
-
-| Dokuman | Icerik |
-| --- | --- |
-| [OPERASYON_HIZLI_MUDAHALE.md](OPERASYON_HIZLI_MUDAHALE.md) | Sistem yavasligi, ekran acilmama ve acil mudahale adimlari. |
-| [OPERASYON_ISLEMLERI_DETAYLI_API_DOKUMANI.md](OPERASYON_ISLEMLERI_DETAYLI_API_DOKUMANI.md) | Operasyon modulu API davranislari. |
-| [STOK_ANOMALI_MERKEZI.md](STOK_ANOMALI_MERKEZI.md) | Stok Anomali Merkezi tarama kurallari, API'leri, veri modeli ve kullanim akisi. |
-
-### Fatura Ve UBL
-
-| Dokuman | Icerik |
-| --- | --- |
-| [FATURA_GONDERIM_SISTEMI.md](FATURA_GONDERIM_SISTEMI.md) | Fatura gonderim, validate/send/retry, Uyumsoft, XSLT ve Mikro yazim akisi. |
-| [UBL_FATURA_MANTIGI.md](UBL_FATURA_MANTIGI.md) | UBL fatura XML mantigi ve Mikro verilerinden beslenme sekli. |
-| [MIKRO_MUHASEBE_AKIS_REHBERI.md](MIKRO_MUHASEBE_AKIS_REHBERI.md) | Mikro stok/cari/fatura muhasebe akis rehberi. |
-
-### Mal Kabul, Siparis Ve Stok
-
-| Dokuman | Icerik |
-| --- | --- |
-| [DEPO_MAL_KABUL_ISLEYIS.md](DEPO_MAL_KABUL_ISLEYIS.md) | Depo mal kabul isleyisi. |
-| [FIRMA_MAL_KABUL_SENARYO.md](FIRMA_MAL_KABUL_SENARYO.md) | Firma mal kabul senaryolari ve Mikro yazim kurallari. |
-| [BARKOD_COZUMLEME_VE_ARAMA_REHBERI.md](BARKOD_COZUMLEME_VE_ARAMA_REHBERI.md) | Barkod okutma, cozumleme, urun arama, fiyat/cari bulma ve barkod tanimlama rehberi. |
-| [MANAV_MAL_KABUL_VE_ETIKET_API.md](MANAV_MAL_KABUL_VE_ETIKET_API.md) | Manav mal kabul ve etiket mal kabul kayitlari, hesaplama, etiket datasi ve rapor API rehberi. |
-| [MANAV_OPERASYON_PANELI.md](MANAV_OPERASYON_PANELI.md) | 56 Manav Depo icin alis, MNV tartim farki, sube kasa talebi, sevk, sayim ve kontrollu duzeltme akisi. |
-| [DEPO_ONERILEN_SIPARIS.md](DEPO_ONERILEN_SIPARIS.md) | Depo onerilen siparis sorgu ve hesap mantigi. |
-| [FIRMA_ONERILEN_SIPARIS.md](FIRMA_ONERILEN_SIPARIS.md) | Firma/tedarikci onerilen siparis mantigi. |
-
-### Mikro Ve Entegrasyon
-
-| Dokuman | Icerik |
-| --- | --- |
-| [MIKRO_PROSEDUR_ANALIZI.md](MIKRO_PROSEDUR_ANALIZI.md) | Mikro stored procedure analizleri. |
-| [MIKRO_REST_API_GECIS_ANALIZI.md](MIKRO_REST_API_GECIS_ANALIZI.md) | Dogrudan Mikro DB davranislarindan Mikro REST API'ye gecis analizi. |
-| [MIKRO_API_POSTMAN_DOKUMANI.md](MIKRO_API_POSTMAN_DOKUMANI.md) | Mikro API Postman collection dokumani. |
-| [AXATA_ENTEGRASYON_ALTYAPISI.md](AXATA_ENTEGRASYON_ALTYAPISI.md) | AXATA entegrasyon altyapisi ve mevcut API davranisi. |
-
-## Gelistirme Standardi
-
-Yeni gelistirmeler genel olarak `module > menu > action` standardi ile ilerler.
-
-Ornek:
-
-```text
-Application/
-  Modules/
-    FaturaIslemleri/
-      FaturaGonderimi/
-        ISendInvoiceSendingDocumentsUseCase.cs
-
-Infrastructure/
-  Modules/
-    FaturaIslemleri/
-      FaturaGonderimi/
-        SendInvoiceSendingDocumentsUseCase.cs
-
-WebApi/
-  Controllers/
-    Modules/
-      FaturaIslemleri/
-        FaturaGonderimi/
-          FaturaGonderimiController.cs
-```
-
-Temel kurallar:
-
-- Her menu kendi controller dosyasina sahiptir.
-- Controller sadece HTTP, auth ve request/response baglantisini tasir.
-- Is akisi `Application` kontratlari ve `Infrastructure` implementasyonlari uzerinden ilerler.
-- Mikro sorgulari ve dis servis cagrilari `Infrastructure` tarafinda kalir.
-- Route, permission code ve menu yapisi ayni isimlendirme mantigini izler.
-
-## Secret Ve Config Kurali
-
-- Repo icindeki `appsettings.json` ve `appsettings.Production.json` dosyalari secret template olarak kalmalidir.
-- Gercek sifre, connection string, JWT secret ve entegrasyon kullanici bilgileri GitHub'a push edilmemelidir.
-- Lokal makinede secret gerekiyorsa `src/FurpaMerkezApi.WebApi/appsettings.Local.json` kullanilir.
-- `appsettings.Local.json` `.gitignore` icindedir.
-- Canli sunucuda secret'lar publish sonrasi server tarafinda veya environment variable olarak tutulmalidir.
-
-## GitHub'a Gondermeden Once
-
-- `appsettings.Production.json` icinde bos veya placeholder secret oldugunu kontrol et.
-- `appsettings.Local.json` dosyasinin staged olmadigini kontrol et.
-- `git status` ile beklenmeyen dosya veya secret olmadigini dogrula.
-- Dokuman eklediysen bu klasordeki linklerin calistigini kontrol et.
-
+Swagger varsayilan olarak `http://localhost:5228/swagger` adresindedir.

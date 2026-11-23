@@ -865,6 +865,8 @@ UI su ayrimi net yapmalidir:
 - C02 import `CompanyMovement` yazma rotasina uyar: `Database` modunda DB transaction, `MikroApi` modunda `IrsaliyeKaydetV2` calisir. UI ayni endpointi kullanir; mod secimi backend config isidir.
 - C03/C4 legacy importlar su an DB yazimidir; Mikro API kontrati netlesmeden `MikroWriteRouting` ile API yoluna alinmamalidir.
 - G01 icin `live/axata/inbound-atf/g01/*`, G02 icin `live/axata/inbound-deliveries/g02/*` route'lari kullanilmalidir.
+- G01 duplicate kontrolundeki `sth_sip_uid` listeleri en fazla 500 GUID'lik parcalarla sorgulanir ve her parcanin suresi olculur. `docs/UYGULAMA_INDEXLERI.sql` katalogu bu ana sorgu icin dar, filtreli `sth_sip_uid` indeksini tanimlar. Satir izi icin ikinci bir genis indeks eklenmez; 220 milyondan fazla satirli tabloda olusturma ve yazma maliyeti kazancindan yuksek bulunmustur.
+- C02/C03/C4 legacy hareketleri ve DynamicCensus `Database` yazimlari `MikroWriteBatching:AxataEnabled=true` iken merkezi tek-satir trigger writer'ini kullanir. AXATA ack ancak Mikro transaction'i tamamlandiktan sonra atilir.
 
 ## Bilinen Sinirlar
 

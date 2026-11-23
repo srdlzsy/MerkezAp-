@@ -371,6 +371,17 @@ public sealed class CompanyMovementDetailQueryExecutor(MikroDbContext mikroDbCon
             .OrderBy(movement => movement.sth_evrakno_seri)
             .ThenBy(movement => movement.sth_evrakno_sira)
             .ThenBy(movement => movement.sth_satirno)
+            .Select(movement => new
+            {
+                movement.sth_Guid,
+                movement.sth_stok_kod,
+                movement.sth_miktar,
+                movement.sth_evrakno_seri,
+                movement.sth_evrakno_sira,
+                movement.sth_aciklama,
+                movement.sth_belge_no,
+                movement.sth_eticaret_kanal_kodu
+            })
             .ToListAsync(cancellationToken);
 
         return rows

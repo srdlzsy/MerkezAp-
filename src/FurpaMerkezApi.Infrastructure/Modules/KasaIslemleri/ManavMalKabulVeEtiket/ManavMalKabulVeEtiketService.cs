@@ -26,7 +26,8 @@ public sealed partial class ManavMalKabulVeEtiketService(
     MikroWriteDbContext mikroWriteDbContext,
     IUyumsoftConnectedQueryService uyumsoftConnectedQueryService,
     MikroApiClient mikroApiClient,
-    IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions) : IManavMalKabulVeEtiketService
+    IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
+    IOptionsMonitor<MikroWriteBatchingOptions> mikroWriteBatchingOptions) : IManavMalKabulVeEtiketService
 {
     private const int DefaultTake = 20;
     private const int MaxTake = 100;
@@ -1173,7 +1174,19 @@ public sealed partial class ManavMalKabulVeEtiketService(
                     offlineTraceKey);
 
                 await mikroWriteDbContext.CARI_HESAP_HAREKETLERIs.AddAsync(customerMovement, cancellationToken);
-                await mikroWriteDbContext.STOK_HAREKETLERIs.AddRangeAsync(movementRows, cancellationToken);
+                var batchingOptions = mikroWriteBatchingOptions.CurrentValue;
+                if (batchingOptions.GreenGrocerReceivingEnabled)
+                {
+                    await MikroStockMovementBulkWriter.WriteAsync(
+                        mikroWriteDbContext,
+                        movementRows,
+                        batchingOptions.BulkCopyTimeoutSeconds,
+                        cancellationToken);
+                }
+                else
+                {
+                    await mikroWriteDbContext.STOK_HAREKETLERIs.AddRangeAsync(movementRows, cancellationToken);
+                }
                 await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
 
                 var updatedAcceptanceRecordCount = normalized.MarkAcceptanceRecordsTransferred

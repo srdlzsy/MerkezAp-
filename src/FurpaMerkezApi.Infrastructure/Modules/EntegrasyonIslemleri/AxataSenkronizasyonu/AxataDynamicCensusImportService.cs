@@ -17,6 +17,7 @@ internal sealed class AxataDynamicCensusImportService(
     IOptionsMonitor<AxataSynchronizationOptions> options,
     MikroWriteDbContext mikroWriteDbContext,
     IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
+    IOptionsMonitor<MikroWriteBatchingOptions> mikroWriteBatchingOptions,
     MikroApiClient mikroApiClient,
     ILogger<AxataDynamicCensusImportService> logger)
     : IAxataDynamicCensusImportService
@@ -250,7 +251,19 @@ internal sealed class AxataDynamicCensusImportService(
         await using var transaction = await mikroWriteDbContext.Database.BeginTransactionAsync(cancellationToken);
         try
         {
-            await mikroWriteDbContext.STOK_HAREKETLERIs.AddRangeAsync(movements, cancellationToken);
+            var batchingOptions = mikroWriteBatchingOptions.CurrentValue;
+            if (batchingOptions.AxataEnabled)
+            {
+                await MikroStockMovementBulkWriter.WriteAsync(
+                    mikroWriteDbContext,
+                    movements,
+                    batchingOptions.BulkCopyTimeoutSeconds,
+                    cancellationToken);
+            }
+            else
+            {
+                await mikroWriteDbContext.STOK_HAREKETLERIs.AddRangeAsync(movements, cancellationToken);
+            }
             await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
         }

@@ -38,6 +38,7 @@ internal sealed class AxataG01InboundAtfImportService(
     private const byte MovementGenre = 0;
     private const byte NormalReturn = 0;
     private const byte CompanyReceivingDocumentType = 13;
+    private const int ExistingMovementLookupChunkSize = 500;
     private const double QuantityTolerance = 0.000001d;
 
     public async Task<AxataG01InboundAtfPreviewDto> PreviewAsync(
@@ -607,24 +608,36 @@ internal sealed class AxataG01InboundAtfImportService(
             return new Dictionary<Guid, int>();
         }
 
-        var rows = await mikroWriteDbContext.STOK_HAREKETLERIs
-            .AsNoTracking()
-            .Where(movement =>
-                movement.sth_sip_uid.HasValue &&
-                orderGuids.Contains(movement.sth_sip_uid.Value) &&
-                movement.sth_iptal != true &&
-                movement.sth_tip == MovementIn &&
-                movement.sth_cins == MovementGenre &&
-                movement.sth_evraktip == CompanyReceivingDocumentType)
-            .GroupBy(movement => movement.sth_sip_uid!.Value)
-            .Select(group => new
-            {
-                OrderGuid = group.Key,
-                Count = group.Count()
-            })
-            .ToArrayAsync(cancellationToken);
+        var result = new Dictionary<Guid, int>();
+        foreach (var guidChunk in orderGuids.Chunk(ExistingMovementLookupChunkSize))
+        {
+            var rows = await mikroWriteDbContext.STOK_HAREKETLERIs
+                .AsNoTracking()
+                .Where(movement =>
+                    movement.sth_sip_uid.HasValue &&
+                    guidChunk.Contains(movement.sth_sip_uid.Value) &&
+                    movement.sth_iptal != true &&
+                    movement.sth_tip == MovementIn &&
+                    movement.sth_cins == MovementGenre &&
+                    movement.sth_evraktip == CompanyReceivingDocumentType)
+                .GroupBy(movement => movement.sth_sip_uid!.Value)
+                .Select(group => new
+                {
+                    OrderGuid = group.Key,
+                    Count = group.Count()
+                })
+                .ToMeasuredListAsync(
+                    logger,
+                    "Axata:G01:ExistingMovementCounts",
+                    cancellationToken);
 
-        return rows.ToDictionary(row => row.OrderGuid, row => row.Count);
+            foreach (var row in rows)
+            {
+                result[row.OrderGuid] = row.Count;
+            }
+        }
+
+        return result;
     }
 
     private async Task<HashSet<string>> GetExistingRowKeysAsync(

@@ -48,7 +48,7 @@ IX_FR_STH_StokFisi_Trace
 Kurulum scripti:
 
 ```text
-docs/STOK_HAREKETLERI_STOK_FISI_ACIL_INDEXLERI.sql
+docs/UYGULAMA_INDEXLERI.sql
 ```
 
 Bu script 218 milyon satirli tabloda yogun saatte calistirilmaz. Dusuk trafik

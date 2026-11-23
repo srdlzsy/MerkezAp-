@@ -120,7 +120,7 @@ sorgulari buyuk `STOK_HAREKETLERI` tablosunda genis tarama yapabilir. Yalniz bu
 kritik indeksi kuran script:
 
 ```text
-docs/STOK_HAREKETLERI_FIRMA_MAL_KABUL_TRACE_INDEX.sql
+docs/UYGULAMA_INDEXLERI.sql
 ```
 
 SQL Server 2017, `CREATE INDEX` icin dusuk oncelikli kilit beklemesini

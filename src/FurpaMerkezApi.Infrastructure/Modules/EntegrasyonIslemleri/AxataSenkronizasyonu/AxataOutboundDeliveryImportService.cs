@@ -29,6 +29,7 @@ internal sealed class AxataOutboundDeliveryImportService(
     IAcceptWarehouseReceivingUseCase acceptWarehouseReceivingUseCase,
     ICreateCompanyShipmentUseCase createCompanyShipmentUseCase,
     IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
+    IOptionsMonitor<MikroWriteBatchingOptions> mikroWriteBatchingOptions,
     IDocumentFlowService documentFlowService,
     AxataImportDocumentFlowRecorder importDocumentFlowRecorder,
     ILogger<AxataOutboundDeliveryImportService> logger,
@@ -3046,7 +3047,7 @@ internal sealed class AxataOutboundDeliveryImportService(
                             stockWeights.GetValueOrDefault(line.AxataLine.StockCode)))
                         .ToArray();
 
-                    await mikroWriteDbContext.STOK_HAREKETLERIs.AddRangeAsync(movementRows, cancellationToken);
+                    await WriteStockMovementsAsync(movementRows, cancellationToken);
                     await UpdateC02OrderDeliveredQuantitiesAsync(analysis, cancellationToken);
                     await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
                     await transaction.CommitAsync(cancellationToken);
@@ -3874,7 +3875,7 @@ internal sealed class AxataOutboundDeliveryImportService(
                             stockWeights.GetValueOrDefault(line.StockCode)))
                         .ToArray();
 
-                    await mikroWriteDbContext.STOK_HAREKETLERIs.AddRangeAsync(movementRows, cancellationToken);
+                    await WriteStockMovementsAsync(movementRows, cancellationToken);
                     await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
                     await transaction.CommitAsync(cancellationToken);
 
@@ -3911,6 +3912,24 @@ internal sealed class AxataOutboundDeliveryImportService(
             acknowledged
                 ? $"Mikro {movementType} legacy hareketi olusturuldu ve AXATA ENT006.S06STAT=1 yapildi."
                 : $"Mikro {movementType} legacy hareketi olusturuldu; AXATA status degistirilmedi.");
+    }
+
+    private async Task WriteStockMovementsAsync(
+        IReadOnlyCollection<STOK_HAREKETLERI> movements,
+        CancellationToken cancellationToken)
+    {
+        var batchingOptions = mikroWriteBatchingOptions.CurrentValue;
+        if (!batchingOptions.AxataEnabled)
+        {
+            await mikroWriteDbContext.STOK_HAREKETLERIs.AddRangeAsync(movements, cancellationToken);
+            return;
+        }
+
+        await MikroStockMovementBulkWriter.WriteAsync(
+            mikroWriteDbContext,
+            movements,
+            batchingOptions.BulkCopyTimeoutSeconds,
+            cancellationToken);
     }
 
     private async Task<AxataOutboundDeliveryImportResultDto> ExecuteLegacyC03WithMikroApiAsync(
