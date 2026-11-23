@@ -1,6 +1,5 @@
 using System.Net;
 using System.Net.Http.Json;
-using System.Text.Json;
 using FurpaMerkezApi.WebApi.Tests.Infrastructure;
 using Xunit;
 
@@ -10,20 +9,14 @@ public sealed class AuthorizationPipelineTests(FurpaWebApplicationFactory factor
     : IClassFixture<FurpaWebApplicationFactory>
 {
     [Fact]
-    public async Task ManavKunyeDetailedLabels_AllowsAnonymousRequests()
+    public async Task ManavKunyeDetailedLabels_RequiresAuthentication()
     {
         var client = factory.CreateClient();
 
         var response = await client.GetAsync(
             "/api/kasa-islemleri/manav-kunye-etiket-yazdirma/detayli-etiketler?warehouseNo=101");
 
-        var content = await response.Content.ReadAsStringAsync();
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        using var document = JsonDocument.Parse(content);
-        var tag = document.RootElement[0];
-        Assert.Equal("STK-001", tag.GetProperty("stockCode").GetString());
-        Assert.Equal("8690000000001", tag.GetProperty("barcode").GetString());
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]

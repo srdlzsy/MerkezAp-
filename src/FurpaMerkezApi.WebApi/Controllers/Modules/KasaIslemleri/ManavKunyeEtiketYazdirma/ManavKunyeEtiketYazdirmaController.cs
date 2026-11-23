@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.KunyeEtiketYazdirma;
 using FurpaMerkezApi.WebApi.Controllers.Modules.Common;
+using FurpaMerkezApi.WebApi.Extensions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -18,18 +19,22 @@ public sealed class ManavKunyeEtiketYazdirmaController(
     private const string MenuCode = "manav-kunye-etiket-yazdirma";
     private const string MenuName = "ManavKunyeEtiketYazdirma";
     private const string ListPolicy = "kasa-islemleri.manav-kunye-etiket-yazdirma.list";
+    private const string AllWarehousesPolicy = "kasa-islemleri.manav-kunye-etiket-yazdirma.all-warehouses";
 
     [HttpGet("detayli-etiketler")]
-    [AllowAnonymous]
+    [Authorize(Policy = ListPolicy)]
     [ProducesResponseType(typeof(IReadOnlyCollection<KunyeLabelTagDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<IReadOnlyCollection<KunyeLabelTagDto>>> List(
         [FromQuery] ManavKunyeDetailedLabelTagListHttpRequest request,
         CancellationToken cancellationToken)
     {
+        var warehouseNo = User.ResolveWarehouseNo(request.WarehouseNo, AllWarehousesPolicy);
         var response = await listKunyeLabelTagsUseCase.ExecuteAsync(
             new KunyeLabelTagListRequest(
-                request.WarehouseNo!.Value,
+                warehouseNo,
                 request.DateToGet),
             cancellationToken);
 
@@ -51,7 +56,6 @@ public sealed class ManavKunyeEtiketYazdirmaController(
 
 public sealed class ManavKunyeDetailedLabelTagListHttpRequest
 {
-    [Required]
     [Range(1, int.MaxValue)]
     public int? WarehouseNo { get; init; }
 

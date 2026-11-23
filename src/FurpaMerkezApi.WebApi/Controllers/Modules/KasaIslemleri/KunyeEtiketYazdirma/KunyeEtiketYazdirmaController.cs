@@ -21,6 +21,7 @@ public sealed class KunyeEtiketYazdirmaController(
     private const string MenuCode = "kunye-etiket-yazdirma";
     private const string MenuName = "KunyeEtiketYazdirma";
     private const string ListPolicy = "kasa-islemleri.kunye-etiket-yazdirma.list";
+    private const string AllWarehousesPolicy = "kasa-islemleri.kunye-etiket-yazdirma.all-warehouses";
 
     [HttpGet]
     [Authorize(Policy = ListPolicy)]
@@ -30,7 +31,7 @@ public sealed class KunyeEtiketYazdirmaController(
         [FromQuery] KunyeLabelTagListHttpRequest request,
         CancellationToken cancellationToken)
     {
-        var warehouseNo = User.GetRequiredWarehouseNo();
+        var warehouseNo = User.ResolveWarehouseNo(request.WarehouseNo, AllWarehousesPolicy);
         var response = await listLabelTagsUseCase.ExecuteAsync(
             new LabelTagListRequest(
                 warehouseNo,
@@ -45,4 +46,7 @@ public sealed class KunyeLabelTagListHttpRequest
 {
     [Required]
     public DateTime? DateToGet { get; init; }
+
+    [Range(1, int.MaxValue)]
+    public int? WarehouseNo { get; init; }
 }
