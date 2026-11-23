@@ -99,7 +99,8 @@ public sealed class CreateCompanyReceivingUseCase(
                         request.CustomerCode,
                         request.Lines.Select(line => line.StockCode),
                         "Firma mal kabul",
-                        innerCancellationToken);
+                        innerCancellationToken,
+                        rejectUnavailableProducts: true);
                     await ValidateDocumentAvailabilityBeforeReservationAsync(request, innerCancellationToken);
                 });
 

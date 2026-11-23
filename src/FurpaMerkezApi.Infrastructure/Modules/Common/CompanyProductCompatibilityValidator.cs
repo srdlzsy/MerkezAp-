@@ -12,7 +12,8 @@ internal static class CompanyProductCompatibilityValidator
         string customerCode,
         IEnumerable<string> stockCodes,
         string operationName,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool rejectUnavailableProducts = false)
     {
         var normalizedCustomerCode = customerCode.Trim();
         var normalizedStockCodes = stockCodes
@@ -46,11 +47,53 @@ internal static class CompanyProductCompatibilityValidator
                     SELECT StockCode
                     FROM (VALUES {string.Join(", ", stockParameters.Select(parameter => $"({parameter})"))}) AS requested(StockCode)
                 )
-                SELECT requested.StockCode, CONVERT(date, GETDATE()) AS ValidationDate
+                SELECT
+                    requested.StockCode,
+                    CONVERT(date, GETDATE()) AS ValidationDate,
+                    CONVERT(bit, CASE
+                        WHEN stock.sto_kod IS NOT NULL
+                         AND @rejectUnavailableProducts = 1
+                         AND
+                         (
+                             COALESCE
+                             (
+                                 (
+                                     SELECT TOP (1) warehouseAvailability.sdp_Pasif_fl
+                                     FROM dbo.STOK_DEPO_DETAYLARI AS warehouseAvailability WITH (NOLOCK)
+                                     WHERE warehouseAvailability.sdp_depo_kod = stock.sto_kod
+                                       AND warehouseAvailability.sdp_depo_no = @warehouseNo
+                                 ),
+                                 stock.sto_pasif_fl,
+                                 0
+                             ) = 1
+                             OR LTRIM(ISNULL(stock.sto_isim, N'')) LIKE N'DLS%'
+                         )
+                        THEN 1
+                        ELSE 0
+                    END) AS IsUnavailable
                 FROM RequestedStock AS requested
                 LEFT JOIN dbo.STOKLAR AS stock WITH (NOLOCK)
                     ON stock.sto_kod = requested.StockCode
                 WHERE stock.sto_kod IS NULL
+                   OR
+                  (
+                      @rejectUnavailableProducts = 1
+                      AND
+                      (
+                          COALESCE
+                          (
+                              (
+                                  SELECT TOP (1) warehouseAvailability.sdp_Pasif_fl
+                                  FROM dbo.STOK_DEPO_DETAYLARI AS warehouseAvailability WITH (NOLOCK)
+                                  WHERE warehouseAvailability.sdp_depo_kod = stock.sto_kod
+                                    AND warehouseAvailability.sdp_depo_no = @warehouseNo
+                              ),
+                              stock.sto_pasif_fl,
+                              0
+                          ) = 1
+                          OR LTRIM(ISNULL(stock.sto_isim, N'')) LIKE N'DLS%'
+                      )
+                  )
                    OR NOT
                   (
                       LTRIM(RTRIM(ISNULL(stock.sto_sat_cari_kod, N''))) = @customerCode
@@ -85,18 +128,37 @@ internal static class CompanyProductCompatibilityValidator
 
             AddParameter(command, "@warehouseNo", warehouseNo, DbType.Int32);
             AddParameter(command, "@customerCode", normalizedCustomerCode, DbType.String);
+            AddParameter(command, "@rejectUnavailableProducts", rejectUnavailableProducts, DbType.Boolean);
             for (var index = 0; index < normalizedStockCodes.Length; index++)
             {
                 AddParameter(command, stockParameters[index], normalizedStockCodes[index], DbType.String);
             }
 
             var incompatibleStockCodes = new List<string>();
+            var unavailableStockCodes = new List<string>();
             DateTime? validationDate = null;
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
             {
-                incompatibleStockCodes.Add(reader.GetString(0).Trim());
+                var stockCode = reader.GetString(0).Trim();
+                if (reader.GetBoolean(2))
+                {
+                    unavailableStockCodes.Add(stockCode);
+                }
+                else
+                {
+                    incompatibleStockCodes.Add(stockCode);
+                }
+
                 validationDate ??= reader.GetDateTime(1).Date;
+            }
+
+            if (unavailableStockCodes.Count > 0)
+            {
+                throw new CompanyProductAvailabilityException(
+                    operationName,
+                    warehouseNo,
+                    unavailableStockCodes);
             }
 
             if (incompatibleStockCodes.Count > 0)

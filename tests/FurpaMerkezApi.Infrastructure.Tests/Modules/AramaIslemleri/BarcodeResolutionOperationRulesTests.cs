@@ -7,6 +7,21 @@ namespace FurpaMerkezApi.Infrastructure.Tests.Modules.AramaIslemleri;
 public sealed class BarcodeResolutionOperationRulesTests
 {
     [Theory]
+    [InlineData(null, "DLS.SGR.ROTHMANS", true)]
+    [InlineData(false, " DLS URUN", true)]
+    [InlineData(true, "DLS URUN", false)]
+    [InlineData(null, "AKTIF URUN", false)]
+    public void ShouldExcludeDlsForNonRefund_TreatsMissingRefundFlagAsNonRefund(
+        bool? isRefund,
+        string stockName,
+        bool expected)
+    {
+        var result = ResolveBarcodeUseCase.ShouldExcludeDlsForNonRefund(isRefund, stockName);
+
+        Assert.Equal(expected, result);
+    }
+
+    [Theory]
     [InlineData(true, true, "Mixed")]
     [InlineData(true, false, "Warehouse")]
     [InlineData(false, true, "Company")]

@@ -351,7 +351,7 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
         var isGoodsAcceptanceBlocked = IsBlocked(goodsAcceptanceBlockCode);
         var isPassive = warehouseDetail?.IsPassive ?? stock.IsPassive.GetValueOrDefault();
         var isBlocked = isPassive || isSalesBlocked || isOrderBlocked || isGoodsAcceptanceBlocked;
-        var isExcludedForNonRefund = request.IsRefund == false && StartsWithDls(stock.StockName);
+        var isExcludedForNonRefund = ShouldExcludeDlsForNonRefund(request.IsRefund, stock.StockName);
 
         var screenUsability = EvaluateScreenUsability(
             screenCode,
@@ -1075,6 +1075,9 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
 
     private static bool StartsWithDls(string? value) =>
         NormalizeOrNull(value)?.StartsWith("DLS", StringComparison.OrdinalIgnoreCase) == true;
+
+    internal static bool ShouldExcludeDlsForNonRefund(bool? isRefund, string? stockName) =>
+        isRefund != true && StartsWithDls(stockName);
 
     private static bool IsBlocked(byte? value) =>
         value.GetValueOrDefault() != 0;

@@ -11,6 +11,32 @@ namespace FurpaMerkezApi.WebApi.Tests.Middleware;
 public sealed class ExceptionHandlingMiddlewareTests
 {
     [Fact]
+    public async Task InvokeAsync_WritesClearCompanyProductAvailabilityWarning()
+    {
+        var middleware = new ExceptionHandlingMiddleware(
+            _ => throw new CompanyProductAvailabilityException(
+                "Firma mal kabul",
+                106,
+                ["022786"]),
+            NullLogger<ExceptionHandlingMiddleware>.Instance);
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/api/mal-kabul-islemleri/firma-mal-kabulleri";
+        context.Response.Body = new MemoryStream();
+
+        await middleware.InvokeAsync(context);
+
+        Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+        context.Response.Body.Position = 0;
+        using var body = await JsonDocument.ParseAsync(context.Response.Body);
+        var root = body.RootElement;
+        var detail = root.GetProperty("detail").GetString();
+        Assert.Equal("Gecersiz istek", root.GetProperty("title").GetString());
+        Assert.Contains("pasif veya DLS", detail);
+        Assert.Contains("022786", detail);
+        Assert.Contains("Mikro'ya evrak yazilmadi", detail);
+    }
+
+    [Fact]
     public async Task InvokeAsync_WritesClearCompanyProductCompatibilityWarning()
     {
         var middleware = new ExceptionHandlingMiddleware(

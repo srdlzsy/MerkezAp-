@@ -71,7 +71,8 @@ public sealed class CreateIssuedCompanyOrderUseCase(
                     request.CustomerCode,
                     request.Lines.Select(line => line.StockCode),
                     "Verilen firma siparisi",
-                    innerCancellationToken));
+                    innerCancellationToken,
+                    rejectUnavailableProducts: true));
     }
 
     public Task<OfflineSyncStatusDto<CreateIssuedCompanyOrderResponse>> GetOfflineSyncStatusAsync(

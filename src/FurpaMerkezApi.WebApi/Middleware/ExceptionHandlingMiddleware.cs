@@ -52,6 +52,15 @@ public sealed class ExceptionHandlingMiddleware(
                 string.Join(",", exception.StockCodes));
             await WriteProblemDetailsAsync(httpContext, StatusCodes.Status400BadRequest, exception.Message);
         }
+        catch (CompanyProductAvailabilityException exception)
+        {
+            logger.LogWarning(
+                "Company product availability validation rejected the operation. OperationName={OperationName}, WarehouseNo={WarehouseNo}, StockCodes={StockCodes}",
+                exception.OperationName,
+                exception.WarehouseNo,
+                string.Join(",", exception.StockCodes));
+            await WriteProblemDetailsAsync(httpContext, StatusCodes.Status400BadRequest, exception.Message);
+        }
         catch (ArgumentException exception)
         {
             logger.LogWarning(exception, "A validation error occurred.");
