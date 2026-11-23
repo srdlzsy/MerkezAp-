@@ -4,6 +4,24 @@ namespace FurpaMerkezApi.WebApi.Middleware;
 
 internal static class SqlServerExceptionClassifier
 {
+    internal static bool IsTransientDatabaseFailure(Exception exception)
+    {
+        if (exception is SqlException sqlException &&
+            sqlException.Errors.Cast<SqlError>().Any(error => IsTransientDatabaseErrorNumber(error.Number)))
+        {
+            return true;
+        }
+
+        if (exception is AggregateException aggregateException &&
+            aggregateException.InnerExceptions.Any(IsTransientDatabaseFailure))
+        {
+            return true;
+        }
+
+        return exception.InnerException is not null &&
+            IsTransientDatabaseFailure(exception.InnerException);
+    }
+
     internal static bool IsConnectivityFailure(Exception exception)
     {
         if (exception is SqlException sqlException &&
@@ -45,4 +63,8 @@ internal static class SqlServerExceptionClassifier
             49918 or
             49919 or
             49920;
+
+    internal static bool IsTransientDatabaseErrorNumber(int errorNumber) =>
+        IsConnectivityErrorNumber(errorNumber) ||
+        errorNumber is -2 or 1205 or 1222 or 4891;
 }

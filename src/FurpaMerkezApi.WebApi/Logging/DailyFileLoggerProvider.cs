@@ -8,6 +8,8 @@ public sealed class DailyFileLoggerProvider(
     IOptionsMonitor<FileLoggingOptions> optionsMonitor,
     IHostEnvironment hostEnvironment) : ILoggerProvider, ISupportExternalScope
 {
+    private const int AppendAttemptCount = 3;
+    private static readonly Encoding LogEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
     private readonly ConcurrentDictionary<string, DailyFileLogger> loggers = new(StringComparer.OrdinalIgnoreCase);
     private readonly object syncRoot = new();
     private IExternalScopeProvider scopeProvider = new LoggerExternalScopeProvider();
@@ -57,7 +59,7 @@ public sealed class DailyFileLoggerProvider(
 
         lock (syncRoot)
         {
-            Append(logPath, entry);
+            TryAppend(logPath, entry);
         }
     }
 
@@ -81,6 +83,34 @@ public sealed class DailyFileLoggerProvider(
         return Path.Combine(basePath, monthFolder, fileName);
     }
 
+    private static void TryAppend(string filePath, string contents)
+    {
+        for (var attempt = 1; attempt <= AppendAttemptCount; attempt++)
+        {
+            try
+            {
+                Append(filePath, contents);
+                return;
+            }
+            catch (IOException) when (attempt < AppendAttemptCount)
+            {
+                Thread.Sleep(attempt * 20);
+            }
+            catch (UnauthorizedAccessException) when (attempt < AppendAttemptCount)
+            {
+                Thread.Sleep(attempt * 20);
+            }
+            catch (IOException)
+            {
+                return;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return;
+            }
+        }
+    }
+
     private static void Append(string filePath, string contents)
     {
         var directory = Path.GetDirectoryName(filePath);
@@ -90,7 +120,13 @@ public sealed class DailyFileLoggerProvider(
             Directory.CreateDirectory(directory);
         }
 
-        File.AppendAllText(filePath, contents, Encoding.UTF8);
+        using var stream = new FileStream(
+            filePath,
+            FileMode.Append,
+            FileAccess.Write,
+            FileShare.ReadWrite | FileShare.Delete);
+        using var writer = new StreamWriter(stream, LogEncoding);
+        writer.Write(contents);
     }
 
     private string? CollectScopeText()

@@ -6,6 +6,16 @@ namespace FurpaMerkezApi.WebApi.Tests.Middleware;
 public sealed class SqlServerExceptionClassifierTests
 {
     [Theory]
+    [InlineData(-2)]
+    [InlineData(1205)]
+    [InlineData(1222)]
+    [InlineData(4891)]
+    public void IsTransientDatabaseErrorNumber_ReturnsTrueForRetryableOperationErrors(int errorNumber)
+    {
+        Assert.True(SqlServerExceptionClassifier.IsTransientDatabaseErrorNumber(errorNumber));
+    }
+
+    [Theory]
     [InlineData(0)]
     [InlineData(2)]
     [InlineData(20)]

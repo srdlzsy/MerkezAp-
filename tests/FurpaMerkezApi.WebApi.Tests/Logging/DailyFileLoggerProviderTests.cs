@@ -10,6 +10,40 @@ namespace FurpaMerkezApi.WebApi.Tests.Logging;
 public sealed class DailyFileLoggerProviderTests
 {
     [Fact]
+    public void Logger_DoesNotBreakCallerWhenDailyFileIsTemporarilyLocked()
+    {
+        var rootPath = Path.Combine(Path.GetTempPath(), $"furpa-log-lock-test-{Guid.NewGuid():N}");
+        var monthPath = Path.Combine(rootPath, DateTimeOffset.Now.ToString("yyyy-MM"));
+        var logPath = Path.Combine(monthPath, $"information-{DateTimeOffset.Now:yyyy-MM-dd}.log");
+        Directory.CreateDirectory(monthPath);
+
+        try
+        {
+            using var lockStream = new FileStream(logPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+            var options = new FileLoggingOptions
+            {
+                BasePath = rootPath,
+                InformationFilePrefix = "information",
+                WarningFilePrefix = "warnings",
+                ErrorFilePrefix = "errors",
+                MinimumLevel = LogLevel.Information
+            };
+            using var provider = new DailyFileLoggerProvider(
+                new StaticOptionsMonitor<FileLoggingOptions>(options),
+                new TestHostEnvironment(rootPath));
+            var logger = provider.CreateLogger("LockedFileTest");
+
+            var exception = Record.Exception(() => logger.LogInformation("locked-file-entry"));
+
+            Assert.Null(exception);
+        }
+        finally
+        {
+            Directory.Delete(rootPath, recursive: true);
+        }
+    }
+
+    [Fact]
     public void Logger_WritesEachLevelToItsOwnDailyFile()
     {
         var rootPath = Path.Combine(Path.GetTempPath(), $"furpa-log-test-{Guid.NewGuid():N}");

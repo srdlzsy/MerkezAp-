@@ -32,6 +32,15 @@ public sealed class ExceptionHandlingMiddleware(
                 StatusCodes.Status503ServiceUnavailable,
                 "Veritabani servisine gecici olarak ulasilamiyor. Lutfen kisa bir sure sonra tekrar deneyin.");
         }
+        catch (Exception exception) when (SqlServerExceptionClassifier.IsTransientDatabaseFailure(exception))
+        {
+            logger.LogWarning(exception, "A transient SQL Server operation error occurred after retries were exhausted.");
+            await WriteProblemDetailsAsync(
+                httpContext,
+                StatusCodes.Status503ServiceUnavailable,
+                "Veritabani islemi gecici bir cakisma nedeniyle tamamlanamadi. Kayit yeniden denenebilir.",
+                retryable: true);
+        }
         catch (CompanyProductCompatibilityException exception)
         {
             logger.LogWarning(

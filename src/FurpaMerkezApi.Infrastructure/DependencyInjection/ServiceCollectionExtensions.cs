@@ -488,7 +488,7 @@ public static class ServiceCollectionExtensions
                     sqlServer.EnableRetryOnFailure(
                         maxRetryCount: 3,
                         maxRetryDelay: TimeSpan.FromSeconds(5),
-                        errorNumbersToAdd: [1205]);
+                        errorNumbersToAdd: [1205, 4891]);
                     sqlServer.CommandTimeout(mikroWriteCommandTimeoutSeconds);
                 }));
 
