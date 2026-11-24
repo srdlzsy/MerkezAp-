@@ -45,6 +45,10 @@ public sealed class WarehouseMovementMikroSnapshotReader(
             cache.Set(cacheKey, snapshot, CacheDuration);
             return snapshot;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception exception)
         {
             logger.LogWarning(

@@ -189,6 +189,14 @@ public sealed class SearchProductsUseCase(
             null,
             sourceWarehouseStockCodes,
             cancellationToken);
+
+        // Numeric input is ambiguous, but stock code has always had precedence.
+        // Avoid a second full procedure execution once that preferred lookup succeeded.
+        if (stockCodeProducts.Count > 0)
+        {
+            return stockCodeProducts;
+        }
+
         var barcodeLookup = BarcodeLookupNormalizer.Normalize(input);
         var exactBarcodeProducts = await ReadProductsByBarcodeCandidatesAsync(
             connection,
@@ -201,11 +209,9 @@ public sealed class SearchProductsUseCase(
             sourceWarehouseStockCodes,
             allowPartialSuffix: false,
             cancellationToken);
-        var exactProducts = MergeDistinctProducts(stockCodeProducts, exactBarcodeProducts, take);
-
-        if (exactProducts.Count > 0)
+        if (exactBarcodeProducts.Count > 0)
         {
-            return exactProducts;
+            return exactBarcodeProducts;
         }
 
         return await ReadProductsByPartialBarcodeSuffixAsync(
@@ -218,31 +224,6 @@ public sealed class SearchProductsUseCase(
             take,
             sourceWarehouseStockCodes,
             cancellationToken);
-    }
-
-    private static IReadOnlyCollection<ProductLookupItemDto> MergeDistinctProducts(
-        IReadOnlyCollection<ProductLookupItemDto> primary,
-        IReadOnlyCollection<ProductLookupItemDto> secondary,
-        int take)
-    {
-        var products = new List<ProductLookupItemDto>(Math.Min(take, primary.Count + secondary.Count));
-        var seenStockCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var product in primary.Concat(secondary))
-        {
-            if (!seenStockCodes.Add(product.StockCode))
-            {
-                continue;
-            }
-
-            products.Add(product);
-            if (products.Count >= take)
-            {
-                break;
-            }
-        }
-
-        return products;
     }
 
     private static async Task<IReadOnlyCollection<ProductLookupItemDto>> ReadProductsByBarcodeCandidatesAsync(
@@ -444,15 +425,31 @@ public sealed class SearchProductsUseCase(
         var products = new List<ProductLookupItemDto>(take);
 
         using var command = connection.CreateCommand();
-        command.CommandText = "dbo.__StokveFiyatArama_Gokhan";
-        command.CommandType = CommandType.StoredProcedure;
+        command.CommandText = BuildProductSearchSql(barcode, stockCode, stockName, supplierCode);
+        command.CommandType = CommandType.Text;
         command.CommandTimeout = 300;
 
-        AddParameter(command, "@sfiyat_deposirano", warehouseNo);
-        AddParameter(command, "@bar_kodu", barcode);
-        AddParameter(command, "@sfiyat_stokkod", stockCode);
-        AddParameter(command, "@sto_isim", stockName);
-        AddParameter(command, "@tedarikci", supplierCode);
+        AddParameter(command, "@warehouseNo", warehouseNo);
+
+        if (barcode is not null)
+        {
+            AddParameter(command, "@barcode", barcode);
+        }
+
+        if (stockCode is not null)
+        {
+            AddParameter(command, "@stockCode", stockCode);
+        }
+
+        if (stockName is not null)
+        {
+            AddParameter(command, "@stockName", stockName);
+        }
+
+        if (supplierCode is not null)
+        {
+            AddParameter(command, "@supplierCode", supplierCode);
+        }
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
@@ -498,6 +495,79 @@ public sealed class SearchProductsUseCase(
         }
 
         return products;
+    }
+
+    internal static string BuildProductSearchSql(
+        string? barcode,
+        string? stockCode,
+        string? stockName,
+        string? supplierCode)
+    {
+        var sql = new System.Text.StringBuilder(
+            """
+            SELECT DISTINCT
+                warehouse.sdp_depo_no AS DepoNo,
+                barcode.bar_kodu AS BarKodu,
+                price.sfiyat_stokkod AS StokKod,
+                stock.sto_isim AS StokIsim,
+                price.sfiyat_fiyati AS Fiyati,
+                price.sfiyat_birim_pntr AS FiyatTipKodu,
+                unit.sto_birim_ad AS BirimAd,
+                unit.sto_birim_katsayi AS BirimKatsayisi,
+                stock.sto_birim2_ad AS BirimAd2,
+                stock.sto_birim2_katsayi * -1 AS BirimKatsayisi2,
+                warehouse.sdp_satisdursun AS SatisDursun,
+                warehouse.sdp_sipdursun AS SipDursun,
+                warehouse.sdp_malkabuldursun AS MalKabulDursun,
+                stock.sto_urun_sorkod AS UrunSorumlusu
+            FROM dbo.STOKLAR AS stock WITH (NOLOCK)
+            INNER JOIN dbo.STOK_SATIS_FIYAT_LISTELERI AS price WITH (NOLOCK)
+                ON price.sfiyat_stokkod = stock.sto_kod
+            INNER JOIN dbo.STOK_DEPO_DETAYLARI AS warehouse WITH (NOLOCK)
+                ON warehouse.sdp_depo_no = @warehouseNo
+               AND warehouse.sdp_depo_kod = price.sfiyat_stokkod
+            INNER JOIN dbo.STOK_BIRIM_TANIMLARI_DIKEY AS unit WITH (NOLOCK)
+                ON unit.sto_kod = price.sfiyat_stokkod
+               AND unit.sto_birimID = price.sfiyat_birim_pntr
+            INNER JOIN dbo.BARKOD_TANIMLARI AS barcode WITH (NOLOCK)
+                ON barcode.bar_stokkodu = stock.sto_kod
+               AND barcode.bar_birimpntr = price.sfiyat_birim_pntr
+            WHERE price.sfiyat_odemeplan = 0
+              AND price.sfiyat_listesirano = 1
+              AND price.sfiyat_deposirano = @warehouseNo
+            """);
+
+        if (!string.IsNullOrWhiteSpace(barcode))
+        {
+            sql.AppendLine("  AND barcode.bar_kodu = @barcode");
+        }
+
+        if (!string.IsNullOrWhiteSpace(stockCode))
+        {
+            sql.AppendLine("  AND price.sfiyat_stokkod = @stockCode");
+        }
+
+        if (!string.IsNullOrWhiteSpace(stockName))
+        {
+            sql.AppendLine("  AND stock.sto_isim LIKE N'%' + @stockName + N'%'");
+        }
+
+        if (!string.IsNullOrWhiteSpace(supplierCode))
+        {
+            sql.AppendLine(
+                """
+                  AND EXISTS
+                      (
+                          SELECT 1
+                          FROM dbo.SATINALMA_SARTLARI AS terms WITH (NOLOCK)
+                          WHERE terms.sas_stok_kod = stock.sto_kod
+                            AND terms.sas_cari_kod = @supplierCode
+                      )
+                """);
+        }
+
+        sql.AppendLine("ORDER BY price.sfiyat_stokkod, barcode.bar_kodu;");
+        return sql.ToString();
     }
 
     private async Task<IReadOnlySet<string>> GetSourceWarehouseStockCodesAsync(

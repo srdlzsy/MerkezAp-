@@ -11,6 +11,27 @@ namespace FurpaMerkezApi.Infrastructure.Tests.Modules.OperasyonIslemleri.DepoOpe
 public sealed class WarehouseMovementMikroSnapshotReaderTests
 {
     [Fact]
+    public async Task ReadAsync_RethrowsCallerCancellation()
+    {
+        var options = new DbContextOptionsBuilder<MikroDbContext>()
+            .UseInMemoryDatabase($"warehouse-movement-snapshot-cancel-{Guid.NewGuid():N}")
+            .Options;
+        await using var dbContext = new MikroDbContext(options);
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var reader = new WarehouseMovementMikroSnapshotReader(
+            dbContext,
+            cache,
+            NullLogger<WarehouseMovementMikroSnapshotReader>.Instance);
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => reader.ReadAsync(
+            new DateOnly(2026, 11, 1),
+            new DateOnly(2026, 11, 24),
+            cancellation.Token));
+    }
+
+    [Fact]
     public async Task ReadAsync_GroupsDocumentsAndResolvesPendingAndAcceptedTargets()
     {
         var options = new DbContextOptionsBuilder<MikroDbContext>()

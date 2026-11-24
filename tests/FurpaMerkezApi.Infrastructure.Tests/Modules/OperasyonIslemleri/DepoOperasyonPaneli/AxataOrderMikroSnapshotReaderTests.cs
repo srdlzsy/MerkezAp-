@@ -14,6 +14,36 @@ namespace FurpaMerkezApi.Infrastructure.Tests.Modules.OperasyonIslemleri.DepoOpe
 public sealed class AxataOrderMikroSnapshotReaderTests
 {
     [Fact]
+    public async Task ReadAsync_RethrowsCallerCancellation()
+    {
+        var dbOptions = new DbContextOptionsBuilder<MikroDbContext>()
+            .UseInMemoryDatabase($"axata-order-snapshot-cancel-{Guid.NewGuid():N}")
+            .Options;
+        await using var dbContext = new MikroDbContext(dbOptions);
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var synchronizationOptions = new AxataSynchronizationOptions
+        {
+            Enabled = true,
+            Tasks = new Dictionary<string, AxataSynchronizationTaskOptions>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["issued-warehouse-order-sync"] = new() { Enabled = true, DefaultWarehouseNo = 50 }
+            }
+        };
+        var reader = new AxataOrderMikroSnapshotReader(
+            dbContext,
+            cache,
+            new StaticOptionsMonitor<AxataSynchronizationOptions>(synchronizationOptions),
+            NullLogger<AxataOrderMikroSnapshotReader>.Instance);
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => reader.ReadAsync(
+            new DateOnly(2026, 11, 1),
+            new DateOnly(2026, 11, 24),
+            cancellation.Token));
+    }
+
+    [Fact]
     public async Task ReadAsync_ReturnsOnlyEnabledAxataScopeAndUsesMikroSentFlag()
     {
         var dbOptions = new DbContextOptionsBuilder<MikroDbContext>()

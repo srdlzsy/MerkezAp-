@@ -124,7 +124,7 @@ internal sealed class AxataSynchronizationLiveTransportService(
                 var existingOrder = await GetAxataOutboundOrderPresenceAsync(payload, cancellationToken);
                 if (existingOrder.MatchesPayload)
                 {
-                    logger.LogWarning(
+                    logger.LogInformation(
                         "AXATA C01 order {DocumentNumber} already exists. Duplicate dispatch was skipped and Mikro sent flag will be reconciled.",
                         payload.DocumentNumber);
                     return BuildExistingOutboundOrderResult(configuration, payload);
@@ -455,7 +455,7 @@ internal sealed class AxataSynchronizationLiveTransportService(
                 var existingOrder = await GetAxataOutboundOrderPresenceAsync(payload, cancellationToken);
                 if (existingOrder.MatchesPayload)
                 {
-                    logger.LogWarning(
+                    logger.LogInformation(
                         "AXATA C02 order {DocumentNumber} already exists. Duplicate dispatch was skipped and Mikro sent flag will be reconciled.",
                         payload.DocumentNumber);
                     return BuildExistingOutboundOrderResult(configuration, payload);
@@ -590,7 +590,7 @@ internal sealed class AxataSynchronizationLiveTransportService(
                     cancellationToken);
                 if (existingOrder.HeaderExists && existingOrder.LineCount > 0)
                 {
-                    logger.LogWarning(
+                    logger.LogInformation(
                         "AXATA {MovementCode} inbound order {DocumentNumber} already exists. Duplicate dispatch was skipped and Mikro sent flag will be reconciled.",
                         payload.MovementCode,
                         payload.DocumentNumber);

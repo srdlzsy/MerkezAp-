@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.Globalization;
+using FurpaMerkezApi.Application.Common.Errors;
 using FurpaMerkezApi.Application.Modules.AyarIslemleri.VeritabaniIzleme;
 using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
 using FurpaMerkezApi.Application.Modules.Common.CompanyMovements;
@@ -186,6 +187,20 @@ public sealed class FirmaMalKabulleriController(
                 response.TotalNetAcceptedQuantity);
 
             return StatusCode(StatusCodes.Status201Created, response);
+        }
+        catch (OperationConflictException exception)
+        {
+            logger.LogInformation(
+                "Company receiving create rejected by business conflict. ErrorCode={ErrorCode}; Retryable={Retryable}; WarehouseNo={WarehouseNo}; ClientRequestId={ClientRequestId}; CustomerCode={CustomerCode}; Document={DocumentSerie}/{DocumentOrderNo}",
+                exception.ErrorCode,
+                exception.Retryable,
+                warehouseNo,
+                request.ClientRequestId,
+                request.CustomerCode,
+                request.DocumentSerie,
+                request.DocumentOrderNo);
+
+            throw;
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {

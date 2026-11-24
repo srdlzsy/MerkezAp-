@@ -52,6 +52,10 @@ public sealed class AxataOrderMikroSnapshotReader(
             cache.Set(cacheKey, snapshot, CacheDuration);
             return snapshot;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception exception)
         {
             logger.LogWarning(

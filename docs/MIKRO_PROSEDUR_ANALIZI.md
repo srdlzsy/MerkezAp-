@@ -33,6 +33,13 @@ notlanmistir.
 
 ### `__StokveFiyatArama_Gokhan`
 
+Guncel durum (24.11.2026):
+
+- Prosedur Mikro'da tarihsel/legacy referans olarak bulunur.
+- Merkez API urun ve fiyat arama endpointleri artik bu proseduru cagirmiyor.
+- Parametre koklama ve gereksiz `SATINALMA_SARTLARI` cogalmasini onlemek icin
+  ayni sonuc, uygulama icindeki parametrik salt-okunur sorguyla uretiliyor.
+
 Amac:
 
 - Stok, barkod ve fiyat arama icin guclu aday.
@@ -782,7 +789,6 @@ Risk:
 
 Bu procedure'ler icin ileride `Infrastructure/Mikro/StoredProcedures` gibi bir adapter katmani acilabilir:
 
-- `__StokveFiyatArama_Gokhan`
 - `msp_ApiStokListesiV2`
 - `msp_ApiCariListesiV2`
 - `msp_ApiStokSatisFiyatTanimListesi`

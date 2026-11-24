@@ -2076,7 +2076,7 @@ public sealed class EDespatchService(
 
             if (!string.Equals(resolvedAlias, customer.Alias, StringComparison.OrdinalIgnoreCase))
             {
-                logger.LogWarning(
+                logger.LogInformation(
                     "Mikro e-despatch alias was replaced with an active Uyumsoft receiver alias. CustomerCode={CustomerCode}, TaxNumber={TaxNumber}, MikroAlias={MikroAlias}, ResolvedAlias={ResolvedAlias}, ActiveAliasCount={ActiveAliasCount}",
                     customer.CustomerCode,
                     customer.TaxNumber,

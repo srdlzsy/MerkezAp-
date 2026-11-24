@@ -5300,7 +5300,9 @@ Not:
 - UI menusu olarak gorunen `FiyatGor` ve `CariBul` endpointleri kendi `list` permission'larini ister.
 - `Son Kunye` endpoint'i anonim cagrilabilir; login olmadan kullanilacaksa `warehouseNo` query parametresi zorunludur.
 - Mikro tarafinda sadece SELECT/read-only mantigiyla calisir.
-- Urun arama `dbo.__StokveFiyatArama_Gokhan` stored procedure'u ile yapilir.
+- Urun arama Mikro stok, fiyat, depo detayi, birim ve barkod tablolarina salt-okunur,
+  parametrik sorguyla yapilir. Yalniz gonderilen filtre SQL'e eklenir; eski
+  `dbo.__StokveFiyatArama_Gokhan` prosedurune bagimli degildir.
 - Mobil barkod okutma senaryolarinda genel `urunler` listesi yerine once `barkodlar/{barcode}/cozumle` endpoint'i tercih edilmelidir.
 - Barkod okutma, cozumleme, satira ekleme, fiyat/cari bulma ve barkod tanimlatma karar akisi icin kisa rehber: `docs/BARKOD_COZUMLEME_VE_ARAMA_REHBERI.md`.
 - Mobil offline fiyat okutma icin tekil `fiyat-gor` endpointleri yerine `GET /api/mobile-sync/urun-fiyat-katalogu` ile depo bazli katalog cihaza indirilmelidir.
