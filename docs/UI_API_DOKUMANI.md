@@ -5634,7 +5634,7 @@ operationType  opsiyonel; islem tipini verir, satira ekleme kararinda kullanilir
 targetWarehouseNo opsiyonel; hedef depo/model kod uygunlugu hesaplamak icin kullanilir; shipment icin bloklayici degildir
 supplierCode   opsiyonel; secili tedarikciye gore SATINALMA_SARTLARI kontrolu yapar; receiving/order icin karar motoruna dahil edilir
 companyCode    opsiyonel; supplierCode ile ayni anlamda geriye uyum alias'i
-isRefund       opsiyonel; false ise eski sistemdeki iade disi DLS filtresi uygulanir
+isRefund       opsiyonel; true ise iade baglami DLS engelini kaldirir; false/null tek basina engel degildir
 screenCode     opsiyonel; eski UI uyumu icin korunur, operationType bos ise ekran baglami gibi kullanilir
 ```
 
@@ -5663,7 +5663,8 @@ Onemli not:
 - `isSalesBlocked`, `isOrderBlocked`, `isGoodsAcceptanceBlocked` ve `isPassive` depo detay degerleri varsa depo ozelinden, yoksa stok kartindan hesaplanir.
 - `isAllowedForTargetWarehouse` hedef depo verilirse `DEPOLAR.dep_barkod_yazici_yolu` icindeki model kod listesine gore hesaplanir.
 - `operationType=shipment` icin hedef depo model kod sonucu bilgi olarak donebilir; fakat hedef depo model kodu sevkte `isUsableInOperation=false` yapmaz.
-- `operationType=shipment` icin `isSalesBlocked=true` bilgi/uyari olarak doner; pasif/DLS disinda tek basina satira eklemeyi bloklamaz.
+- DLS urunler firma mal kabul (`receiving`) ve siparis (`order`) baglaminda engellenir. Depo mal kabul, sevk, sayim, zayiat, iade, virman ve genel barkod sorgusunda DLS durumu tek basina blok uretmez. `isRefund=true` oldugunda iade baglami acikca serbesttir.
+- `operationType=shipment` icin `isSalesBlocked=true` bilgi/uyari olarak doner; pasif urun disinda tek basina satira eklemeyi bloklamaz.
 - `hasPurchaseRequirement`, `supplierCode/companyCode` verilirse veya operasyon `receiving`/`order` ise cari-stok uyum sonucudur. Secili cari icin stok kartindaki varsayilan tedarikci, secili depodaki stok-depo tedarikcisi veya depo/tarih kapsamindaki aktif `SATINALMA_SARTLARI` kaydindan biri yeterlidir.
 - `operationType=receiving` ve `operationType=order` icin bu uyum satira ekleme kararina zorunlu olarak girer. `operationType=return` da `supplierCode/companyCode` gonderildiginde ayni zorunlu kontrolu uygular; firma iadesine baska carinin urunu eklenemez.
 - `operationType=shipment` icin sirf `targetWarehouseNo` geldi diye satinalma sarti kontrolu calismaz ve satira ekleme bloklanmaz.
@@ -11214,17 +11215,19 @@ Response:
 
 ### Kunye Etiket Yazdirma
 
-Belirli bir tarih icin kullanicinin deposuna ait kunye etiket kayitlarini Kasa Islemleri altindaki ayri menu route'undan getirir.
+Belirli bir tarih icin secilen depoya ait kunye etiket kayitlarini Kasa Islemleri altindaki ayri menu route'undan getirir. Depo secilmezse JWT icindeki kullanici deposu kullanilir.
 
-`GET /api/kasa-islemleri/kunye-etiket-yazdirma?dateToGet=2026-04-24`
+`GET /api/kasa-islemleri/kunye-etiket-yazdirma?dateToGet=2026-04-24&warehouseNo=110`
 
 Yetki:
 
-- yok; token gerekmez, herkese aciktir
+- `kasa-islemleri.kunye-etiket-yazdirma.list`
+- JWT deposundan farkli bir depo secmek icin `kasa-islemleri.kunye-etiket-yazdirma.all-warehouses`
 
 Not:
 
-- `warehouseNo` query ile alinmaz; dogrudan JWT icindeki kullanici deposu kullanilir
+- `warehouseNo` opsiyoneldir; verilmezse JWT icindeki kullanici deposu kullanilir
+- `warehouseNo` JWT deposundan farkliysa `all-warehouses` yetkisi zorunludur; yetkisiz istek `403` doner
 - response modeli `LabelTagDto` doner
 - veri Furpa tarafindaki `VwKunyeNet` view'undan okunur
 - eski `stok-islemleri.kunye-etiket-yazdirma.*` permission kodlari migration ile `kasa-islemleri...` altina tasinir
@@ -11264,11 +11267,12 @@ Varsayilan son 1 ay sorgusu:
 
 Yetki:
 
-- yok; token gerekmez, herkese aciktir
+- `kasa-islemleri.manav-kunye-etiket-yazdirma.list`
+- JWT deposundan farkli bir depo secmek icin `kasa-islemleri.manav-kunye-etiket-yazdirma.all-warehouses`
 
 Query:
 
-- `warehouseNo` zorunlu, 1 veya daha buyuk depo numarasi
+- `warehouseNo` opsiyonel, verilirse 1 veya daha buyuk depo numarasi; verilmezse JWT deposu kullanilir
 - `dateToGet` opsiyonel, verilirse sorgulanacak sevk tarihi
 
 Not:
@@ -11281,7 +11285,8 @@ Not:
 - `salesPrice` alani Mikro `dbo.fn_StokSatisFiyati(stockCode, '1', branchNo, '1')` fonksiyonundan gelir
 - `dateToGet` verilirse tarih filtresi secilen gunun tamamini kapsar; verilmezse `ShippingDate` son 1 ay ile sinirlanir
 - liste `ShippingDate desc` siralanir
-- menu permission kodu `kasa-islemleri.manav-kunye-etiket-yazdirma.page`; liste aksiyonu `kasa-islemleri.manav-kunye-etiket-yazdirma.list`; endpoint anonim oldugu icin API cagrisi token istemez
+- menu permission kodu `kasa-islemleri.manav-kunye-etiket-yazdirma.page`; liste aksiyonu `kasa-islemleri.manav-kunye-etiket-yazdirma.list`; endpoint JWT ister
+- JWT deposundan farkli bir depo icin `kasa-islemleri.manav-kunye-etiket-yazdirma.all-warehouses` zorunludur; yetkisiz istek `403` doner
 
 Response:
 
@@ -19970,12 +19975,13 @@ Production gecici gorev notu:
 Production AXATA import calisma kurali:
 
 - `c01-outbound-delivery-import`, `c02-outbound-delivery-import`, `g01-inbound-atf-import` ve `g02-inbound-delivery-import` Production profilinde aciktir ve 5 dakikada bir calisir.
-- Basariyla AXATA'ya gonderilip Mikro gonderim bayragi dogrulanan C01, C02, G01 ve G02 siparisleri Belge Akis Takibi'ne `AxataOrderSent` adimiyla yazilir. Basariyla Mikro'ya yazilan veya mevcut Mikro kaydi kesin olarak dogrulanan C01, C02, C03, C4 ve G01 belgeleri `AxataDocumentImported`, G02 kabul basarisi ise `WarehouseReceivingAccepted` adimiyla izlenir. Deneme, erteleme ve basarisiz belge kayitlari basarili belge gibi akisa yazilmaz.
+- Basariyla AXATA'ya gonderilip Mikro gonderim bayragi dogrulanan C01, C02, G01 ve G02 siparisleri Belge Akis Takibi'ne `AxataOrderSent` adimiyla yazilir. Basariyla Mikro'ya yazilan veya mevcut Mikro kaydi kesin olarak dogrulanan C01, C02, C03, C4 ve G01 belgeleri `AxataDocumentImported`, G02 kabul basarisi ise `WarehouseReceivingAccepted` adimiyla izlenir. G01 guvenli eslesme/yazma hatalari `Failed` durumuyla ayni belge akisina kaydedilir; ayni hata tekrarlanirsa olay gecmisi sisirilmez ve sonraki basarili deneme ayni akisi tamamlar. Diger deneme/erteleme kayitlari basarili belge gibi yazilmaz.
 - Bu dort gorevde `ImportLookbackDays=14` kullanilir. Zamanlanmis worker bugun dahil son 14 gunluk AXATA kayitlarini isler; daha eski `Status=0` arsiv kayitlari her dongude yeniden taranarak yeni evraklari geciktirmez.
 - C01, C02 ve G02 zamanlanmis okumalarinda `AxataConnection` tanimliysa tarih/durum filtresi dogrudan AXATA SQL tablolarinda uygulanir. WCF, canli import/ack islemi ve SQL baglantisi bulunmayan manuel akislar icin korunur.
 - Eski bir belgenin kurtarilmasi gerekiyorsa belgeye ozel manuel `preview/import/rescue` route'u kullanilir. Manuel route'lar 14 gunluk worker penceresiyle sinirlanmaz.
 - C01/C02 belgesi iptal kodluysa veya sevk durumu iptal olup toplam miktari sifirsa Mikro'da bos fis uretilmez; AXATA kaydi tamamlandi olarak isaretlenir. Bu kayit worker'i surekli `Degraded` durumda tutmaz.
-- G01 icin ayni AXATA satir anahtarlari Mikro'da eksiksiz bulunursa ikinci hareket yazilmaz; yalniz AXATA satirlari tamamlandi olarak isaretlenir.
+- G01 satirlari `S16SIPN + S16IRSN` (siparis + irsaliye) bazinda gruplanir. Ayni siparisin ilk irsaliyesi siparis seri/sirasini kullanabilir; sonraki parcali irsaliyeler ayni seride guvenli `MAX+1` sira ile ayri Mikro evraki olarak acilir.
+- G01 duplicate/readback kontrolu once AXATA satir izlerini, bu izlerin bulunmadigi Mikro API yolunda ise `S16IRSN` tedarikci belge no + siparis satir GUID'i + miktar toplamlarini dogrular. Tum beklenen satirlar tek Mikro evrakinda eksiksizse ikinci hareket yazilmaz; yalniz AXATA satirlari tamamlandi olarak isaretlenir.
 - Siparis/satir/miktar eslesmesi gercekten uyusmuyorsa kayit AXATA'da bekler ve Mikro'ya tahmini belge yazilmaz. Kalici deneme durumu aciksa ayni bozuk belge 15 dakika, ikinci hatada 1 saat, ucuncu ve sonraki hatalarda 6 saat ertelenir; diger uygun belgeler ayni batch icinde islenmeye devam eder. Bu is verisi sorunu worker'i durmus veya `Unhealthy` yapmaz. Baglanti, timeout ve veritabani gibi altyapi hatalari ise job hatasi olarak izlenmeye devam eder.
 - Mikro yazisi veya mevcut Mikro kaydinin kesin readback dogrulamasi tamamlanmadan AXATA `Status=1` ack yapilmaz.
 
@@ -20194,13 +20200,16 @@ Not: Bu listede eski teknik route'lar da bulunabilir. Yeni UI icin oncelikli rou
   - response `AxataOutboundDeliveryImportExecuteDto`
 - `GET /api/integrations/axata-sync/live/axata/inbound-atf/g01/preview?take=20`
   - AXATA `getInboundATFListAsync` uzerinden `MovementType=G01`, `Status=0` bekleyen ATF satirlarini okur
-  - `S16SIPN=seri.sira` Mikro firma siparisi, `S16KALN` siparis satiri kabul edilir
+- `S16SIPN=seri.sira` Mikro firma siparisi, `S16KALN` siparis satiri kabul edilir; satirlar `S16SIPN + S16IRSN` ile ayri irsaliye belgelerine gruplanir
   - Mikro'ya veri yazmaz; `canImport`, siparis/miktar/duplicate durumunu doner
   - response `AxataG01InboundAtfPreviewDto`
 - `POST /api/integrations/axata-sync/live/axata/inbound-atf/g01/import`
   - uygun G01 ATF satirlarini Mikro `DocumentType=13` firma mal kabul hareketine cevirir
+- ilk irsaliyede siparis seri/sirasi kullanilabilir; ayni siparisin sonraki `S16IRSN` degerleri ayni seride `MAX+1` ile ayri evrak olur
   - `MikroWriteRouting:CompanyReceiving=Database` ise eski DB transaction yolu kullanilir ve `sip_teslim_miktar` backend tarafinda guncellenir
-  - `MikroWriteRouting:CompanyReceiving=MikroApi` ise `IrsaliyeKaydetV2` yolu kullanilir; backend olusan hareketlerde `sth_sip_uid` linklerini geri okuyup dogrulamadan AXATA ack atmaz
+- `MikroWriteRouting:CompanyReceiving=MikroApi` ise `IrsaliyeKaydetV2` yolu kullanilir; backend olusan hareketlerde `sth_sip_uid` linklerini, tedarikci belge numarasini ve miktar toplamlarini geri okuyup dogrulamadan AXATA ack atmaz
+- duplicate kontrolde AXATA satir izi yoksa tedarikci belge no + siparis satir GUID'i + miktar kaniti kullanilir; eksik veya birden fazla Mikro evrakina dagilmis kanit basarili sayilmaz
+- aktarilamayan G01 belge `Failed` olarak Belge Akis Takibi'ne yazilir; tekrarlanan ayni hata tek akista tutulur, sonraki basari akisi `Succeeded` durumuna ilerletir
   - `acknowledge=true` ise basarili yazimdan sonra `ENT016_IRS.S16STAT=1` yapar
   - body `AxataOutboundDeliveryImportExecuteHttpRequest`
   - response `AxataG01InboundAtfExecuteDto`
@@ -26299,8 +26308,8 @@ Bu bolum test hostundaki ApiExplorer ve Swagger metadata'sindan otomatik uretili
 | GET | `/api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/hediye-ceki-hareketleri` | JWT + kasa-islemleri.kasa-sayimlari.detail | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;GiftCheckMovementItemDto&gt;<br>400: ProblemDetails |
 | PUT | `/api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/hediye-ceki-hareketleri` | JWT + kasa-islemleri.kasa-sayimlari.update | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>body: request / UpdateCashSummaryGiftChecksHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: UpdateCashSummaryGiftChecksResponse<br>400: ProblemDetails<br>404: ProblemDetails |
 | GET | `/api/kasa-islemleri/kasa-sayimlari/{documentSerie}/{documentOrderNo}/z-rapor-toplam` | JWT + kasa-islemleri.kasa-sayimlari.detail | path: documentSerie / string (zorunlu)<br>path: documentOrderNo / integer (int32) (zorunlu)<br>query: warehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: CashSummaryZReportTotalDto<br>400: ProblemDetails<br>404: ProblemDetails |
-| GET | `/api/kasa-islemleri/kunye-etiket-yazdirma` | JWT + kasa-islemleri.kunye-etiket-yazdirma.list | query: DateToGet / string (date-time) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;LabelTagDto&gt;<br>400: ProblemDetails |
-| GET | `/api/kasa-islemleri/manav-kunye-etiket-yazdirma/detayli-etiketler` | Anonim | query: WarehouseNo / integer (int32) (zorunlu)<br>query: DateToGet / string (date-time) | 200: IReadOnlyCollection&lt;KunyeLabelTagDto&gt;<br>400: ProblemDetails |
+| GET | `/api/kasa-islemleri/kunye-etiket-yazdirma` | JWT + kasa-islemleri.kunye-etiket-yazdirma.list | query: DateToGet / string (date-time) (zorunlu)<br>query: WarehouseNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;LabelTagDto&gt;<br>400: ProblemDetails |
+| GET | `/api/kasa-islemleri/manav-kunye-etiket-yazdirma/detayli-etiketler` | JWT + kasa-islemleri.manav-kunye-etiket-yazdirma.list | query: WarehouseNo / integer (int32)<br>query: DateToGet / string (date-time) | 200: IReadOnlyCollection&lt;KunyeLabelTagDto&gt;<br>400: ProblemDetails<br>401: ProblemDetails<br>403: ProblemDetails |
 | GET | `/api/kasa-islemleri/manav-kunye-etiket-yazdirma/kod-listesi` | JWT + kasa-islemleri.manav-kunye-etiket-yazdirma.list |  | 200: IReadOnlyCollection&lt;ManavCodeListItemDto&gt;<br>401: ProblemDetails<br>403: ProblemDetails |
 | GET | `/api/kasa-islemleri/manav-mal-kabul-etiket/acceptance-records` | JWT + kasa-islemleri.manav-mal-kabul-etiket.list | query: Date / string (date-time) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;ManavMalKabulVeEtiketAcceptanceRecordDto&gt;<br>400: ProblemDetails |
 | POST | `/api/kasa-islemleri/manav-mal-kabul-etiket/acceptance-records` | JWT + kasa-islemleri.manav-mal-kabul-etiket.create | body: request / SaveManavMalKabulVeEtiketAcceptanceRecordHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>201: ManavMalKabulVeEtiketAcceptanceRecordDto<br>400: ProblemDetails |

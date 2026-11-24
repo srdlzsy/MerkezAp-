@@ -72,7 +72,7 @@ Query alanlari:
 | `sourceWarehouseNo` | Depo siparisinde urunu gonderecek kaynak depo. Kaynak deponun model/depo katalog uygunlugu bu alanla denetlenir. |
 | `supplierCode` | Secili tedarikci. Satinalma sarti kontrolunde kullanilir. |
 | `companyCode` | `supplierCode` ile ayni anlamda geriye uyum alias'i. |
-| `isRefund` | `false` ise iade disi DLS/99 filtresi uygulanir. |
+| `isRefund` | `true` ise iade baglami DLS engelini kaldirir. `false` veya bos olmasi tek basina DLS engeli degildir; karar operasyon baglamindan verilir. |
 
 Desteklenen tipik islem tipleri:
 
@@ -152,12 +152,12 @@ Bugunku API karar mantigi:
 | Islem | Blok kurali |
 | --- | --- |
 | Tum islemler | `isPassive = true` ise urun kullanilamaz. |
-| Tum islemler | `isRefund = false` ve urun `DLS/99` ise urun kullanilamaz. |
-| `receiving` | Mal kabul bloklu ise kullanilamaz. |
-| `order` | Siparis bloklu ise kullanilamaz. |
-| `shipment` | Satis/sevk blok bilgisi bilgi olarak doner; pasif/DLS disinda satira eklemeyi bloklamaz. |
+| Firma mal kabul (`receiving`) | DLS urun veya mal kabul blogu varsa kullanilamaz. `isRefund=true` DLS engelini kaldirir. |
+| Depo mal kabul (`depo-mal-kabul`, `depo-mal-kabulleri`) | Subeden gelen DLS sevki teslim alinabilsin diye DLS durumu tek basina bloklanmaz. |
+| `order` | DLS urun veya siparis blogu varsa kullanilamaz. |
+| `shipment` | DLS urun serbesttir. Satis/sevk blok bilgisi bilgi olarak doner; pasif urun disinda satira eklemeyi bloklamaz. |
 | `return`, `waste` | Satis/sevk cikis bloklu ise kullanilamaz. |
-| `count` | Pasif/DLS disinda ozel blok uygulanmaz. |
+| `count`, virman ve genel sorgu | DLS durumu tek basina bloklanmaz; pasif urun engeli korunur. |
 | Bilinmeyen islem tipi | Ozel kural yoksa genel bilgiler doner. |
 
 Hedef depo/model kodu:
@@ -194,6 +194,8 @@ Kural:
 - Hedef depo model kodu hesaplanabilir ama sevkte bloklayici degildir.
 - `isSalesBlocked = true` sevkte bilgi/uyari olarak okunur; tek basina satira
   ekleme engeli degildir.
+- DLS urun sevkte kullanilabilir; DLS kontrolu firma mal kabul ve siparis
+  baglamina ozeldir.
 - Satira ekleme karari `isUsableInOperation` ile verilir.
 - Terazi barkoduysa miktar icin `embeddedQuantity` onerilebilir.
 - Koli barkoduysa miktar icin `matchedUnitsPerCase` onerilebilir.
@@ -261,7 +263,8 @@ GET /api/arama-islemleri/barkodlar/{barcode}/cozumle?operationType=count&warehou
 Kural:
 
 - Iade/fire cikis mantiginda satis/sevk bloklari dikkate alinir.
-- Sayimda pasif/DLS disinda ozel operasyon blogu yoktur.
+- Sayimda pasif urun engeli disinda ozel operasyon blogu yoktur; DLS durumu
+  sayim satirini tek basina engellemez.
 
 ## Urun Arama Ne Zaman Kullanilir
 
