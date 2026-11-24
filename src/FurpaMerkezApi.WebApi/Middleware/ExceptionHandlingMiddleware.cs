@@ -1,6 +1,7 @@
 using System.ServiceModel;
 using System.Text.Json;
 using FurpaMerkezApi.Application.Common.Errors;
+using FurpaMerkezApi.Application.Modules.AramaIslemleri.ResolveBarcode;
 using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Mvc;
@@ -127,6 +128,15 @@ public sealed class ExceptionHandlingMiddleware(
                 httpContext,
                 StatusCodes.Status502BadGateway,
                 BuildUpstreamErrorDetail("Dis servis HTTP istegi basarisiz oldu.", exception));
+        }
+        catch (BarcodeResolutionTimeoutException exception)
+        {
+            logger.LogInformation(
+                "A barcode resolution request reached its server-side time limit.");
+            await WriteProblemDetailsAsync(
+                httpContext,
+                StatusCodes.Status504GatewayTimeout,
+                exception.Message);
         }
         catch (TimeoutException exception)
         {

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using FurpaMerkezApi.Application.Modules.AramaIslemleri.ResolveBarcode;
 using FurpaMerkezApi.Application.Common.Errors;
 using FurpaMerkezApi.WebApi.Middleware;
 using Microsoft.AspNetCore.Connections;
@@ -10,6 +11,51 @@ namespace FurpaMerkezApi.WebApi.Tests.Middleware;
 
 public sealed class ExceptionHandlingMiddlewareTests
 {
+    [Fact]
+    public async Task InvokeAsync_Writes504WithClearTurkishDetail_WhenBarcodeResolutionTimesOut()
+    {
+        var middleware = new ExceptionHandlingMiddleware(
+            _ => throw new BarcodeResolutionTimeoutException(
+                new OperationCanceledException()),
+            NullLogger<ExceptionHandlingMiddleware>.Instance);
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/api/arama-islemleri/barkodlar/8681324000796/cozumle";
+        context.Response.Body = new MemoryStream();
+
+        await middleware.InvokeAsync(context);
+
+        Assert.Equal(StatusCodes.Status504GatewayTimeout, context.Response.StatusCode);
+        context.Response.Body.Position = 0;
+        using var body = await JsonDocument.ParseAsync(context.Response.Body);
+        var root = body.RootElement;
+        Assert.Equal("Islem zaman asimina ugradi", root.GetProperty("title").GetString());
+        Assert.Equal(
+            "Barkod sorgusu zaman asimina ugradi. Baglantiyi kontrol edip tekrar deneyin.",
+            root.GetProperty("detail").GetString());
+    }
+
+    [Fact]
+    public async Task InvokeAsync_DoesNotExposeTechnicalDetail_WhenGenericOperationTimesOut()
+    {
+        var middleware = new ExceptionHandlingMiddleware(
+            _ => throw new TimeoutException("SQL command timeout on internal-host-01."),
+            NullLogger<ExceptionHandlingMiddleware>.Instance);
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/api/test";
+        context.Response.Body = new MemoryStream();
+
+        await middleware.InvokeAsync(context);
+
+        Assert.Equal(StatusCodes.Status504GatewayTimeout, context.Response.StatusCode);
+        context.Response.Body.Position = 0;
+        using var body = await JsonDocument.ParseAsync(context.Response.Body);
+        var root = body.RootElement;
+        Assert.Equal(
+            "Islem zamaninda tamamlanamadi. Lutfen kisa bir sure sonra tekrar deneyin.",
+            root.GetProperty("detail").GetString());
+        Assert.DoesNotContain("internal-host-01", root.GetProperty("detail").GetString());
+    }
+
     [Fact]
     public async Task InvokeAsync_WritesClearCompanyProductAvailabilityWarning()
     {

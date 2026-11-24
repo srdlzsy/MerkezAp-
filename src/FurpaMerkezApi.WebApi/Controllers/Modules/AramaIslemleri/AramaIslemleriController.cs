@@ -184,6 +184,7 @@ public sealed class AramaIslemleriController(
     [HttpGet("barkodlar/{barcode}/cozumle")]
     [ProducesResponseType(typeof(BarcodeResolutionDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status504GatewayTimeout)]
     public async Task<ActionResult<BarcodeResolutionDto>> ResolveBarcode(
         string barcode,
         [FromQuery] BarcodeResolutionHttpRequest request,

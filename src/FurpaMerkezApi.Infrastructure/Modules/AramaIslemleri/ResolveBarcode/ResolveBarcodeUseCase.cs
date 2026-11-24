@@ -1,5 +1,6 @@
 using System.Data;
 using System.Data.Common;
+using System.Diagnostics;
 using FurpaMerkezApi.Application.Modules.AramaIslemleri.Common;
 using FurpaMerkezApi.Application.Modules.AramaIslemleri.ResolveBarcode;
 using FurpaMerkezApi.Application.Modules.AramaIslemleri.SearchProducts;
@@ -7,11 +8,20 @@ using FurpaMerkezApi.Infrastructure.Common;
 using FurpaMerkezApi.Infrastructure.Modules.Common;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.AramaIslemleri.ResolveBarcode;
 
-public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IResolveBarcodeUseCase
+public sealed class ResolveBarcodeUseCase(
+    MikroDbContext mikroDbContext,
+    ILogger<ResolveBarcodeUseCase>? logger = null) : IResolveBarcodeUseCase
 {
+    internal static readonly TimeSpan ResolutionTimeout = TimeSpan.FromSeconds(15);
+    private const int RawSqlTimeoutSeconds = 30;
+    private const long SlowResolutionWarningThresholdMs = 1000;
+    private readonly ILogger<ResolveBarcodeUseCase> _logger = logger ?? NullLogger<ResolveBarcodeUseCase>.Instance;
+
     public async Task<BarcodeResolutionDto> ExecuteAsync(
         BarcodeResolutionRequest request,
         CancellationToken cancellationToken)
@@ -30,11 +40,74 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
 
         var rawBarcode = NormalizeOrNull(request.Barcode)
             ?? throw new ArgumentException("Barcode is required.", nameof(request.Barcode));
-        var lookup = BarcodeLookupNormalizer.Normalize(rawBarcode);
-        var lookupCandidates = BarcodeLookupNormalizer.GetLookupCandidates(lookup);
         var screenCode = NormalizeOrNull(request.ScreenCode);
         var operationType = NormalizeOperationType(request.OperationType) ?? NormalizeOperationType(screenCode);
         var supplierCode = NormalizeOrNull(request.SupplierCode);
+
+        var timing = new BarcodeResolutionTimingTracker();
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(ResolutionTimeout);
+
+        try
+        {
+            var result = await ExecuteCoreAsync(
+                request,
+                rawBarcode,
+                screenCode,
+                operationType,
+                supplierCode,
+                timing,
+                timeoutCts.Token);
+
+            var totalElapsedMs = timing.TotalElapsedMs;
+            if (totalElapsedMs >= SlowResolutionWarningThresholdMs)
+            {
+                var slowest = timing.GetSlowestPhase();
+                _logger.LogWarning(
+                    "Slow barcode resolution detected. Barcode={Barcode}, Warehouse={WarehouseNo}, OperationType={OperationType}, Supplier={SupplierCode}, ResolveDurationMs={ResolveDurationMs}, SlowPhase={SlowPhase}, SlowPhaseDurationMs={SlowPhaseDurationMs}, PhaseBreakdown={PhaseBreakdown}",
+                    rawBarcode,
+                    request.WarehouseNo,
+                    operationType ?? "none",
+                    supplierCode ?? "none",
+                    totalElapsedMs,
+                    slowest.Phase,
+                    slowest.DurationMs,
+                    timing.FormatBreakdown());
+            }
+
+            return result;
+        }
+        catch (OperationCanceledException exception) when (
+            timeoutCts.IsCancellationRequested &&
+            !cancellationToken.IsCancellationRequested)
+        {
+            var activePhase = timing.CurrentPhase ?? timing.GetSlowestPhase().Phase;
+            _logger.LogWarning(
+                exception,
+                "Barcode resolution timed out after {TimeoutSeconds}s. Barcode={Barcode}, Warehouse={WarehouseNo}, OperationType={OperationType}, Supplier={SupplierCode}, ResolveDurationMs={ResolveDurationMs}, SlowPhase={SlowPhase}, PhaseBreakdown={PhaseBreakdown}",
+                ResolutionTimeout.TotalSeconds,
+                rawBarcode,
+                request.WarehouseNo,
+                operationType ?? "none",
+                supplierCode ?? "none",
+                timing.TotalElapsedMs,
+                activePhase,
+                timing.FormatBreakdown());
+            throw new BarcodeResolutionTimeoutException(exception);
+        }
+    }
+
+    private async Task<BarcodeResolutionDto> ExecuteCoreAsync(
+        BarcodeResolutionRequest request,
+        string rawBarcode,
+        string? screenCode,
+        string? operationType,
+        string? supplierCode,
+        BarcodeResolutionTimingTracker timing,
+        CancellationToken cancellationToken)
+    {
+        var lookup = BarcodeLookupNormalizer.Normalize(rawBarcode);
+        var lookupCandidates = BarcodeLookupNormalizer.GetLookupCandidates(lookup);
         var targetWarehouseNo = request.TargetWarehouseNo is > 0 ? request.TargetWarehouseNo : null;
         var sourceWarehouseNo = request.SourceWarehouseNo is > 0 ? request.SourceWarehouseNo : null;
         var warnings = new List<string>();
@@ -50,7 +123,9 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
             warnings.Add("EAN-13 check digit appears invalid.");
         }
 
-        var barcodeMatch = await FindBarcodeRowAsync(lookupCandidates, cancellationToken);
+        var barcodeMatch = await timing.MeasureAsync(
+            "barcode-lookup",
+            () => FindBarcodeRowAsync(lookupCandidates, cancellationToken));
         string? stockCode = null;
         string? resolutionSource = null;
         var matchedUnitPointer = 1;
@@ -59,11 +134,15 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
 
         if (barcodeMatch is null)
         {
-            stockSeed = await FindStockSeedAsync(lookupCandidates, cancellationToken);
+            stockSeed = await timing.MeasureAsync(
+                "stock-seed",
+                () => FindStockSeedAsync(lookupCandidates, cancellationToken));
 
             if (stockSeed is null)
             {
-                var partialMatches = await FindPartialBarcodeRowsAsync(lookup, cancellationToken);
+                var partialMatches = await timing.MeasureAsync(
+                    "partial-barcode",
+                    () => FindPartialBarcodeRowsAsync(lookup, cancellationToken));
                 var distinctStockCodes = partialMatches
                     .Select(row => NormalizeOrNull(row.StockCode))
                     .OfType<string>()
@@ -155,28 +234,30 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
                 errors);
         }
 
-        var stock = await mikroDbContext.STOKLARs
-            .AsNoTracking()
-            .Where(item => item.sto_kod == stockCode)
-            .Select(item => new StockSnapshot(
-                item.sto_kod,
-                item.sto_isim,
-                item.sto_kuresel_urun_numarasi,
-                item.sto_sat_cari_kod,
-                item.sto_model_kodu,
-                item.sto_birim1_ad,
-                item.sto_birim1_katsayi,
-                item.sto_birim2_ad,
-                item.sto_birim2_katsayi,
-                item.sto_birim3_ad,
-                item.sto_birim3_katsayi,
-                item.sto_birim4_ad,
-                item.sto_birim4_katsayi,
-                item.sto_satis_dursun,
-                item.sto_siparis_dursun,
-                item.sto_malkabul_dursun,
-                item.sto_pasif_fl))
-            .FirstOrDefaultAsync(cancellationToken);
+        var stock = await timing.MeasureAsync(
+            "stock-snapshot",
+            () => mikroDbContext.STOKLARs
+                .AsNoTracking()
+                .Where(item => item.sto_kod == stockCode)
+                .Select(item => new StockSnapshot(
+                    item.sto_kod,
+                    item.sto_isim,
+                    item.sto_kuresel_urun_numarasi,
+                    item.sto_sat_cari_kod,
+                    item.sto_model_kodu,
+                    item.sto_birim1_ad,
+                    item.sto_birim1_katsayi,
+                    item.sto_birim2_ad,
+                    item.sto_birim2_katsayi,
+                    item.sto_birim3_ad,
+                    item.sto_birim3_katsayi,
+                    item.sto_birim4_ad,
+                    item.sto_birim4_katsayi,
+                    item.sto_satis_dursun,
+                    item.sto_siparis_dursun,
+                    item.sto_malkabul_dursun,
+                    item.sto_pasif_fl))
+                .FirstOrDefaultAsync(cancellationToken));
 
         if (stock is null)
         {
@@ -197,32 +278,36 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
                 errors);
         }
 
-        var warehouseDetail = await mikroDbContext.STOK_DEPO_DETAYLARIs
-            .AsNoTracking()
-            .Where(item => item.sdp_depo_kod == stockCode && item.sdp_depo_no == request.WarehouseNo)
-            .Select(item => new WarehouseDetailSnapshot(
-                item.sdp_satisdursun,
-                item.sdp_sipdursun,
-                item.sdp_malkabuldursun,
-                item.sdp_Pasif_fl,
-                item.sdp_sat_cari_kod,
-                item.sdp_UrunSorumlusuKodu))
-            .FirstOrDefaultAsync(cancellationToken);
+        var warehouseDetail = await timing.MeasureAsync(
+            "warehouse-detail",
+            () => mikroDbContext.STOK_DEPO_DETAYLARIs
+                .AsNoTracking()
+                .Where(item => item.sdp_depo_kod == stockCode && item.sdp_depo_no == request.WarehouseNo)
+                .Select(item => new WarehouseDetailSnapshot(
+                    item.sdp_satisdursun,
+                    item.sdp_sipdursun,
+                    item.sdp_malkabuldursun,
+                    item.sdp_Pasif_fl,
+                    item.sdp_sat_cari_kod,
+                    item.sdp_UrunSorumlusuKodu))
+                .FirstOrDefaultAsync(cancellationToken));
 
-        var productBarcodes = await mikroDbContext.BARKOD_TANIMLARIs
-            .AsNoTracking()
-            .Where(row =>
-                row.bar_iptal != true &&
-                row.bar_stokkodu == stockCode &&
-                row.bar_kodu != null &&
-                row.bar_kodu != string.Empty)
-            .Select(row => new BarcodeRow(
-                row.bar_kodu ?? string.Empty,
-                row.bar_stokkodu,
-                row.bar_birimpntr,
-                row.bar_master ?? false,
-                row.bar_icerigi))
-            .ToListAsync(cancellationToken);
+        var productBarcodes = await timing.MeasureAsync(
+            "product-barcodes",
+            () => mikroDbContext.BARKOD_TANIMLARIs
+                .AsNoTracking()
+                .Where(row =>
+                    row.bar_iptal != true &&
+                    row.bar_stokkodu == stockCode &&
+                    row.bar_kodu != null &&
+                    row.bar_kodu != string.Empty)
+                .Select(row => new BarcodeRow(
+                    row.bar_kodu ?? string.Empty,
+                    row.bar_stokkodu,
+                    row.bar_birimpntr,
+                    row.bar_master ?? false,
+                    row.bar_icerigi))
+                .ToListAsync(cancellationToken));
 
         var primaryBarcode = productBarcodes
             .Where(row => row.UnitPointer.GetValueOrDefault(1) == 1)
@@ -272,17 +357,21 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
                                   ?? NormalizeOrNull(stock.DefaultSupplierCode);
         var defaultSupplierName = defaultSupplierCode is null
             ? null
-            : await mikroDbContext.CARI_HESAPLARs
-                .AsNoTracking()
-                .Where(customer => customer.cari_kod == defaultSupplierCode)
-                .Select(customer => customer.cari_unvan1)
-                .FirstOrDefaultAsync(cancellationToken);
+            : await timing.MeasureAsync(
+                "default-supplier",
+                () => mikroDbContext.CARI_HESAPLARs
+                    .AsNoTracking()
+                    .Where(customer => customer.cari_kod == defaultSupplierCode)
+                    .Select(customer => customer.cari_unvan1)
+                    .FirstOrDefaultAsync(cancellationToken));
 
-        var procurementSources = await SourceWarehouseOrderCatalogReader.ReadProcurementSourcesAsync(
-            mikroDbContext.Database.GetDbConnection(),
-            [stock.StockCode],
-            request.WarehouseNo,
-            cancellationToken);
+        var procurementSources = await timing.MeasureAsync(
+            "procurement-sources",
+            () => SourceWarehouseOrderCatalogReader.ReadProcurementSourcesAsync(
+                mikroDbContext.Database.GetDbConnection(),
+                [stock.StockCode],
+                request.WarehouseNo,
+                cancellationToken));
         var procurementSource = procurementSources.TryGetValue(stock.StockCode, out var source)
             ? source
             : SourceWarehouseProcurementSnapshot.Empty;
@@ -290,21 +379,25 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
             procurementSource.SourceWarehouses.Count > 0,
             procurementSource.HasPurchaseRequirement);
 
-        var targetWarehouse = await EvaluateTargetWarehouseAsync(
-            targetWarehouseNo,
-            stock.ModelCode,
-            cancellationToken);
+        var targetWarehouse = await timing.MeasureAsync(
+            "target-warehouse",
+            () => EvaluateTargetWarehouseAsync(
+                targetWarehouseNo,
+                stock.ModelCode,
+                cancellationToken));
         AddTargetWarnings(targetWarehouse, warnings);
 
         bool? isAllowedForSourceWarehouse = null;
         if (BarcodeResolutionOperationRules.ShouldEnforceSourceWarehouse(operationType, sourceWarehouseNo))
         {
-            isAllowedForSourceWarehouse = await SourceWarehouseOrderCatalogReader.IsStockOrderableAsync(
-                mikroDbContext.Database.GetDbConnection(),
-                sourceWarehouseNo!.Value,
-                stock.StockCode,
-                cancellationToken,
-                request.WarehouseNo);
+            isAllowedForSourceWarehouse = await timing.MeasureAsync(
+                "source-warehouse",
+                () => SourceWarehouseOrderCatalogReader.IsStockOrderableAsync(
+                    mikroDbContext.Database.GetDbConnection(),
+                    sourceWarehouseNo!.Value,
+                    stock.StockCode,
+                    cancellationToken,
+                    request.WarehouseNo));
         }
 
         var shouldEnforceTargetWarehouse = BarcodeResolutionOperationRules.ShouldEnforceTargetWarehouse(operationType);
@@ -314,12 +407,14 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
         var shouldEnforcePurchaseRequirement = BarcodeResolutionOperationRules.ShouldEnforcePurchaseRequirement(
             operationType,
             supplierCode);
-        var hasPurchaseRequirement = await EvaluatePurchaseRequirementAsync(
-            stock.StockCode,
-            request.WarehouseNo,
-            supplierCode,
-            shouldCheckPurchaseRequirement,
-            cancellationToken);
+        var hasPurchaseRequirement = await timing.MeasureAsync(
+            "purchase-requirement",
+            () => EvaluatePurchaseRequirementAsync(
+                stock.StockCode,
+                request.WarehouseNo,
+                supplierCode,
+                shouldCheckPurchaseRequirement,
+                cancellationToken));
 
         var purchaseRequirementReason = hasPurchaseRequirement switch
         {
@@ -330,18 +425,22 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
             _ => null
         };
 
-        var price = await FindSalesPriceAsync(
-            stock.StockCode,
-            request.WarehouseNo,
-            matchedUnitPointer,
-            cancellationToken);
+        var price = await timing.MeasureAsync(
+            "sales-price",
+            () => FindSalesPriceAsync(
+                stock.StockCode,
+                request.WarehouseNo,
+                matchedUnitPointer,
+                cancellationToken));
         var purchasePrice = supplierCode is null
             ? null
-            : await FindLatestPurchasePriceAsync(
-                stock.StockCode,
-                supplierCode,
-                request.WarehouseNo,
-                cancellationToken);
+            : await timing.MeasureAsync(
+                "purchase-price",
+                () => FindLatestPurchasePriceAsync(
+                    stock.StockCode,
+                    supplierCode,
+                    request.WarehouseNo,
+                    cancellationToken));
 
         var salesBlockCode = warehouseDetail?.SalesBlockCode ?? stock.SalesBlockCode;
         var orderBlockCode = warehouseDetail?.OrderBlockCode ?? stock.OrderBlockCode;
@@ -616,7 +715,7 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
                 THEN 1 ELSE 0 END;
                 """;
             command.CommandType = CommandType.Text;
-            command.CommandTimeout = 300;
+            command.CommandTimeout = RawSqlTimeoutSeconds;
 
             AddParameter(command, "@stockCode", stockCode, DbType.String);
             AddParameter(command, "@warehouseNo", warehouseNo, DbType.Int32);
@@ -703,7 +802,7 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
                     sas_Guid DESC;
                 """;
             command.CommandType = CommandType.Text;
-            command.CommandTimeout = 300;
+            command.CommandTimeout = RawSqlTimeoutSeconds;
 
             AddParameter(command, "@stockCode", stockCode, DbType.String);
             AddParameter(command, "@supplierCode", supplierCode, DbType.String);
@@ -1314,4 +1413,54 @@ internal static class BarcodeResolutionLookupRules
 
         return null;
     }
+}
+
+internal sealed class BarcodeResolutionTimingTracker
+{
+    private readonly Stopwatch _totalStopwatch = Stopwatch.StartNew();
+    private readonly List<(string Phase, long DurationMs)> _phases = [];
+
+    public string? CurrentPhase { get; private set; }
+
+    public long TotalElapsedMs => _totalStopwatch.ElapsedMilliseconds;
+
+    public async Task<T> MeasureAsync<T>(string phaseName, Func<Task<T>> action)
+    {
+        CurrentPhase = phaseName;
+        var phaseStopwatch = Stopwatch.StartNew();
+        try
+        {
+            return await action();
+        }
+        finally
+        {
+            phaseStopwatch.Stop();
+            _phases.Add((phaseName, phaseStopwatch.ElapsedMilliseconds));
+            CurrentPhase = null;
+        }
+    }
+
+    public (string Phase, long DurationMs) GetSlowestPhase()
+    {
+        if (_phases.Count == 0)
+        {
+            return (CurrentPhase ?? "none", TotalElapsedMs);
+        }
+
+        var slowest = _phases[0];
+        for (var i = 1; i < _phases.Count; i++)
+        {
+            if (_phases[i].DurationMs > slowest.DurationMs)
+            {
+                slowest = _phases[i];
+            }
+        }
+
+        return slowest;
+    }
+
+    public string FormatBreakdown() =>
+        _phases.Count == 0
+            ? (CurrentPhase is null ? "none" : $"{CurrentPhase}:in-progress")
+            : string.Join(", ", _phases.Select(item => $"{item.Phase}={item.DurationMs}ms"));
 }
