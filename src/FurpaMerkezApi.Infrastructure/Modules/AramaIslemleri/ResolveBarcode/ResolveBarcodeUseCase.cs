@@ -351,7 +351,12 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
         var isGoodsAcceptanceBlocked = IsBlocked(goodsAcceptanceBlockCode);
         var isPassive = warehouseDetail?.IsPassive ?? stock.IsPassive.GetValueOrDefault();
         var isBlocked = isPassive || isSalesBlocked || isOrderBlocked || isGoodsAcceptanceBlocked;
-        var isExcludedForNonRefund = ShouldExcludeDlsForNonRefund(request.IsRefund, stock.StockName);
+        var isDlsExcludedForOperation = ShouldExcludeDlsForOperation(
+            operationType,
+            request.OperationType,
+            screenCode,
+            request.IsRefund,
+            stock.StockName);
 
         var screenUsability = EvaluateScreenUsability(
             screenCode,
@@ -370,7 +375,7 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
             shouldEnforceTargetWarehouse ? targetWarehouse.IsAllowed : null,
             hasPurchaseRequirement,
             shouldEnforcePurchaseRequirement,
-            isExcludedForNonRefund);
+            isDlsExcludedForOperation);
 
         if (!operationDecision.IsUsable)
         {
@@ -945,7 +950,7 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
         bool? isAllowedForTargetWarehouse,
         bool? hasPurchaseRequirement,
         bool shouldEnforcePurchaseRequirement,
-        bool isExcludedForNonRefund)
+        bool isDlsExcludedForOperation)
     {
         if (isPassive)
         {
@@ -969,9 +974,9 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
             return new OperationEvaluation(false, "Urun icin gerekli satinalma sarti bulunamadi.");
         }
 
-        if (isExcludedForNonRefund)
+        if (isDlsExcludedForOperation)
         {
-            return new OperationEvaluation(false, "DLS urunler iade olmayan islemde kullanilamaz.");
+            return new OperationEvaluation(false, "DLS urunler firma mal kabul ve siparis islemlerinde kullanilamaz.");
         }
 
         return operationType switch
@@ -1076,8 +1081,31 @@ public sealed class ResolveBarcodeUseCase(MikroDbContext mikroDbContext) : IReso
     private static bool StartsWithDls(string? value) =>
         NormalizeOrNull(value)?.StartsWith("DLS", StringComparison.OrdinalIgnoreCase) == true;
 
-    internal static bool ShouldExcludeDlsForNonRefund(bool? isRefund, string? stockName) =>
-        isRefund != true && StartsWithDls(stockName);
+    internal static bool ShouldExcludeDlsForOperation(
+        string? operationType,
+        string? rawOperationType,
+        string? screenCode,
+        bool? isRefund,
+        string? stockName)
+    {
+        if (!StartsWithDls(stockName) || isRefund == true)
+        {
+            return false;
+        }
+
+        if (IsWarehouseReceiving(rawOperationType, screenCode))
+        {
+            return false;
+        }
+
+        return operationType is "receiving" or "order";
+    }
+
+    private static bool IsWarehouseReceiving(string? rawOperationType, string? rawScreenCode) =>
+        IsWarehouseReceivingCode(rawOperationType) || IsWarehouseReceivingCode(rawScreenCode);
+
+    private static bool IsWarehouseReceivingCode(string? value) =>
+        NormalizeOrNull(value)?.ToLowerInvariant() is "depo-mal-kabul" or "depo-mal-kabulleri";
 
     private static bool IsBlocked(byte? value) =>
         value.GetValueOrDefault() != 0;

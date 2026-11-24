@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.ServiceModel;
 using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
 using FurpaMerkezApi.Application.Modules.MalKabulIslemleri.MalKabuller.CompanyReceiving;
@@ -38,7 +38,6 @@ internal sealed class AxataG01InboundAtfImportService(
     private const byte MovementGenre = 0;
     private const byte NormalReturn = 0;
     private const byte CompanyReceivingDocumentType = 13;
-    private const int ExistingMovementLookupChunkSize = 500;
     private const double QuantityTolerance = 0.000001d;
 
     public async Task<AxataG01InboundAtfPreviewDto> PreviewAsync(
@@ -48,10 +47,8 @@ internal sealed class AxataG01InboundAtfImportService(
         var take = NormalizeTake(request.Take);
         var lines = await FetchPendingLinesAsync(cancellationToken);
         var eligibleLines = ApplyMinimumAxataDate(lines, request.MinimumAxataDate);
-        var documents = eligibleLines
-            .GroupBy(line => line.OrderDocumentNo, StringComparer.OrdinalIgnoreCase)
+        var documents = GroupDocuments(eligibleLines)
             .Take(take)
-            .Select(group => new G01InboundAtfDocument(group.Key, group.ToArray()))
             .ToArray();
         var analyses = await AnalyzeDocumentsAsync(documents, cancellationToken);
 
@@ -67,7 +64,7 @@ internal sealed class AxataG01InboundAtfImportService(
             analyses.Select(analysis => analysis.Dto).ToArray(),
             [
                 "AXATA getInboundATFListAsync ile G01/Status=0 ENT016_IRS satirlari okunur.",
-                "S16SIPN Mikro firma siparis belge no, S16KALN siparis satir no kabul edilir.",
+                "S16SIPN + S16IRSN (siparis + irsaliye) bazinda gruplanir; ilk irsaliye siparis no ile, sonraki parcali irsaliyeler ayni seride MAX+1 ile acilir.",
                 "CanImport=true olan belgeler Mikro STOK_HAREKETLERI DocumentType=13 firma mal kabul hareketine cevrilebilir."
             ]);
     }
@@ -82,11 +79,12 @@ internal sealed class AxataG01InboundAtfImportService(
         var eligibleLines = ApplyMinimumAxataDate(lines, request.MinimumAxataDate);
         var excludedDocumentNos = request.ExcludedOrderDocumentNos?
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var documents = eligibleLines
-            .GroupBy(line => line.OrderDocumentNo, StringComparer.OrdinalIgnoreCase)
-            .Where(group => excludedDocumentNos is null || !excludedDocumentNos.Contains(group.Key))
+        var documents = GroupDocuments(eligibleLines)
+            .Where(document =>
+                excludedDocumentNos is null ||
+                (!excludedDocumentNos.Contains(document.OrderDocumentNo) &&
+                 !excludedDocumentNos.Contains(BuildExternalDocumentNo(document.OrderDocumentNo, document.DespatchNo))))
             .Take(take)
-            .Select(group => new G01InboundAtfDocument(group.Key, group.ToArray()))
             .ToArray();
         var analyses = await AnalyzeDocumentsAsync(documents, cancellationToken);
         var results = new List<AxataG01InboundAtfResultDto>(analyses.Count);
@@ -95,6 +93,10 @@ internal sealed class AxataG01InboundAtfImportService(
 
         foreach (var analysis in analyses)
         {
+            var externalDocumentNo = BuildExternalDocumentNo(
+                analysis.Document.OrderDocumentNo,
+                analysis.Dto.DespatchNo);
+
             try
             {
                 if (!analysis.Dto.CanImport)
@@ -125,9 +127,22 @@ internal sealed class AxataG01InboundAtfImportService(
                         analysis.Dto.Warning ?? "G01 inbound ATF can not be imported safely.");
                     failures.Add(failure);
                     logger.LogDebug(
-                        "AXATA G01 belge guvenli aktarim kosullarini saglamadigi icin atlandi. OrderDocumentNo={OrderDocumentNo}, Reason={Reason}",
+                        "AXATA G01 belge guvenli aktarim kosullarini saglamadigi icin atlandi. OrderDocumentNo={OrderDocumentNo}, DespatchNo={DespatchNo}, Reason={Reason}",
                         failure.OrderDocumentNo,
+                        analysis.Dto.DespatchNo,
                         failure.ErrorMessage);
+                    await importDocumentFlowRecorder.RecordFailureAsync(
+                        MovementType,
+                        DocumentFlowType.CompanyReceiving,
+                        analysis.Dto.WarehouseNo,
+                        null,
+                        analysis.Dto.DocumentSerie,
+                        analysis.Dto.DocumentOrderNo,
+                        externalDocumentNo,
+                        failure.ErrorMessage,
+                        requestedByUserId,
+                        cancellationToken,
+                        analysis.Dto.DespatchNo);
 
                     if (!request.ContinueOnError)
                     {
@@ -150,10 +165,12 @@ internal sealed class AxataG01InboundAtfImportService(
                     null,
                     result.MovementSerie,
                     result.MovementOrderNo,
-                    result.OrderDocumentNo,
-                    result.Message,
+                    externalDocumentNo,
+                    $"{result.Message} Mikro evraki: {result.MovementSerie}/{result.MovementOrderNo}.",
                     requestedByUserId,
-                    cancellationToken);
+                    cancellationToken,
+                    analysis.Dto.DespatchNo,
+                    analysis.Dto.DocumentOrderNo);
             }
             catch (Exception exception)
             {
@@ -163,8 +180,21 @@ internal sealed class AxataG01InboundAtfImportService(
                     IsInfrastructureFailure: AxataImportFailureClassifier.IsInfrastructureFailure(exception)));
                 logger.LogError(
                     exception,
-                    "AXATA G01 belge aktarimi hata verdi. OrderDocumentNo={OrderDocumentNo}",
-                    analysis.Document.OrderDocumentNo);
+                    "AXATA G01 belge aktarimi hata verdi. OrderDocumentNo={OrderDocumentNo}, DespatchNo={DespatchNo}",
+                    analysis.Document.OrderDocumentNo,
+                    analysis.Dto.DespatchNo);
+                await importDocumentFlowRecorder.RecordFailureAsync(
+                    MovementType,
+                    DocumentFlowType.CompanyReceiving,
+                    analysis.Dto.WarehouseNo,
+                    null,
+                    analysis.Dto.DocumentSerie,
+                    analysis.Dto.DocumentOrderNo,
+                    externalDocumentNo,
+                    exception.Message,
+                    requestedByUserId,
+                    cancellationToken,
+                    analysis.Dto.DespatchNo);
 
                 if (!request.ContinueOnError)
                 {
@@ -208,6 +238,11 @@ internal sealed class AxataG01InboundAtfImportService(
         }
 
         var orderGuids = analysis.MatchedLines.Select(line => line.OrderLine.sip_Guid).Distinct().ToArray();
+        await using var sequenceLock = await MikroDocumentSequenceLock.AcquireAsync(
+            mikroWriteDbContext,
+            "axata-g01-receiving",
+            analysis.Dto.DocumentSerie,
+            cancellationToken);
         var writeResult = await mikroWriteDbContext.Database
             .CreateExecutionStrategy()
             .ExecuteAsync(async () =>
@@ -236,18 +271,28 @@ internal sealed class AxataG01InboundAtfImportService(
                                 "AXATA G01 hareketleri Mikro'da kismi olarak bulundu; duplicate riski nedeniyle otomatik retry durduruldu.");
                         }
 
+                        var existingOrderNo = await FindExistingMovementOrderNoAsync(
+                            analysis.Dto.DocumentSerie,
+                            expectedRowKeys,
+                            cancellationToken) ?? analysis.Dto.DocumentOrderNo;
+
                         await transaction.CommitAsync(cancellationToken);
                         return (
+                            MovementOrderNo: existingOrderNo,
                             CreatedLineCount: analysis.MatchedLines.Count,
                             CreatedQuantity: analysis.MatchedLines.Sum(item => item.Line.Quantity));
                     }
 
+                    var targetDocumentOrderNo = await ResolveMovementOrderNoAsync(
+                        analysis.Dto.DocumentSerie,
+                        analysis.Dto.DocumentOrderNo,
+                        cancellationToken);
                     var trackedOrders = await mikroWriteDbContext.SIPARISLERs
                         .Where(order => orderGuids.Contains(order.sip_Guid))
                         .ToDictionaryAsync(order => order.sip_Guid, cancellationToken);
                     var rowNo = await GetNextLineNoAsync(
                         analysis.Dto.DocumentSerie,
-                        analysis.Dto.DocumentOrderNo,
+                        targetDocumentOrderNo,
                         cancellationToken);
                     var now = DateTime.Now;
                     var movementDate = DateTime.Today;
@@ -262,11 +307,17 @@ internal sealed class AxataG01InboundAtfImportService(
                                 $"Mikro order line was not found for guid {matchedLine.OrderLine.sip_Guid}.");
                         }
 
+                        if (GetRemainingQuantity(order) + QuantityTolerance < matchedLine.Line.Quantity)
+                        {
+                            throw new InvalidOperationException(
+                                $"Mikro siparis satiri kalan miktari yetersiz (Stok={matchedLine.Line.StockCode}, Kalan={GetRemainingQuantity(order)}, Gelen={matchedLine.Line.Quantity}).");
+                        }
+
                         order.sip_teslim_miktar = (order.sip_teslim_miktar ?? 0d) + matchedLine.Line.Quantity;
                         mikroWriteDbContext.STOK_HAREKETLERIs.Add(CreateMovement(
                             matchedLine,
                             analysis.Dto.DocumentSerie,
-                            analysis.Dto.DocumentOrderNo,
+                            targetDocumentOrderNo,
                             rowNo,
                             now,
                             movementDate));
@@ -277,7 +328,10 @@ internal sealed class AxataG01InboundAtfImportService(
 
                     await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
                     await transaction.CommitAsync(cancellationToken);
-                    return (CreatedLineCount: createdLineCount, CreatedQuantity: createdQuantity);
+                    return (
+                        MovementOrderNo: targetDocumentOrderNo,
+                        CreatedLineCount: createdLineCount,
+                        CreatedQuantity: createdQuantity);
                 }
                 catch
                 {
@@ -300,7 +354,7 @@ internal sealed class AxataG01InboundAtfImportService(
         return new AxataG01InboundAtfResultDto(
             analysis.Document.OrderDocumentNo,
             analysis.Dto.DocumentSerie,
-            analysis.Dto.DocumentOrderNo,
+            writeResult.MovementOrderNo,
             writeResult.CreatedLineCount,
             writeResult.CreatedQuantity,
             acknowledged,
@@ -316,24 +370,50 @@ internal sealed class AxataG01InboundAtfImportService(
         CancellationToken cancellationToken)
     {
         var orderGuids = GetG01OrderLineGuids(analysis);
-        var existingMovementLineCount = await CountExistingG01MikroApiMovementLinesAsync(
-            orderGuids,
-            cancellationToken);
-
-        if (existingMovementLineCount > 0)
+        var existingReceipt = await FindExistingReceiptAsync(analysis, cancellationToken);
+        if (existingReceipt is not null)
         {
+            if (!existingReceipt.IsComplete)
+            {
+                throw new InvalidOperationException(
+                    "AXATA G01 irsaliyesi Mikro'da kismi veya farkli miktarla bulundu; duplicate riski nedeniyle otomatik retry durduruldu.");
+            }
+
+            var existingAcknowledged = false;
+            if (acknowledge)
+            {
+                foreach (var line in analysis.Lines)
+                {
+                    await AcknowledgeAsync(line.SequenceNo, cancellationToken);
+                }
+
+                existingAcknowledged = true;
+            }
+
             return new AxataG01InboundAtfResultDto(
                 analysis.Document.OrderDocumentNo,
                 analysis.Dto.DocumentSerie,
-                analysis.Dto.DocumentOrderNo,
+                existingReceipt.DocumentOrderNo,
                 0,
                 0d,
-                false,
-                "Mikro G01 firma mal kabul hareketi bu siparis satirlari icin zaten mevcut; duplicate fis olusturulmadi.");
+                existingAcknowledged,
+                existingAcknowledged
+                    ? "Mikro G01 firma mal kabul hareketi irsaliye, siparis satiri ve miktar bilgileriyle dogrulandi; duplicate fis olusturulmadan AXATA statusu tamamlandi."
+                    : "Mikro G01 firma mal kabul hareketi irsaliye, siparis satiri ve miktar bilgileriyle dogrulandi; duplicate fis olusturulmadi.");
         }
 
+        await using var sequenceLock = await MikroDocumentSequenceLock.AcquireAsync(
+            mikroWriteDbContext,
+            "axata-g01-receiving",
+            analysis.Dto.DocumentSerie,
+            cancellationToken);
+        var targetDocumentOrderNo = await ResolveMovementOrderNoAsync(
+            analysis.Dto.DocumentSerie,
+            analysis.Dto.DocumentOrderNo,
+            cancellationToken);
+
         var response = await createCompanyReceivingUseCase.ExecuteAsync(
-            BuildCreateCompanyReceivingRequest(analysis, requestedByUserId),
+            BuildCreateCompanyReceivingRequest(analysis, requestedByUserId, targetDocumentOrderNo),
             cancellationToken);
 
         await VerifyG01MikroApiOrderLinksAsync(orderGuids, cancellationToken);
@@ -359,31 +439,6 @@ internal sealed class AxataG01InboundAtfImportService(
             acknowledged
                 ? "Mikro API ile G01 firma mal kabul hareketi olusturuldu, siparis linkleri dogrulandi ve AXATA ENT016_IRS.S16STAT=1 yapildi."
                 : "Mikro API ile G01 firma mal kabul hareketi olusturuldu ve siparis linkleri dogrulandi; AXATA status degistirilmedi.");
-    }
-
-    private async Task<int> CountExistingG01MikroApiMovementLinesAsync(
-        IReadOnlyCollection<Guid> orderGuids,
-        CancellationToken cancellationToken)
-    {
-        if (orderGuids.Count == 0)
-        {
-            return 0;
-        }
-
-        return await mikroWriteDbContext.STOK_HAREKETLERIs
-            .AsNoTracking()
-            .Where(movement =>
-                movement.sth_sip_uid.HasValue &&
-                orderGuids.Contains(movement.sth_sip_uid.Value) &&
-                movement.sth_iptal != true &&
-                movement.sth_tip == MovementIn &&
-                movement.sth_cins == MovementGenre &&
-                movement.sth_normal_iade == NormalReturn &&
-                movement.sth_evraktip == CompanyReceivingDocumentType)
-            .CountMeasuredAsync(
-                logger,
-                "Axata:G01:ExistingOrderLinks",
-                cancellationToken);
     }
 
     private async Task VerifyG01MikroApiOrderLinksAsync(
@@ -427,7 +482,8 @@ internal sealed class AxataG01InboundAtfImportService(
 
     private static CreateCompanyReceivingRequest BuildCreateCompanyReceivingRequest(
         G01InboundAtfAnalysis analysis,
-        Guid requestedByUserId)
+        Guid requestedByUserId,
+        int targetDocumentOrderNo)
     {
         var movementDate = DateTime.Today;
         var requestLines = analysis.MatchedLines
@@ -466,7 +522,7 @@ internal sealed class AxataG01InboundAtfImportService(
             movementDate,
             movementDate,
             analysis.Dto.DocumentSerie,
-            analysis.Dto.DocumentOrderNo,
+            targetDocumentOrderNo,
             NormalizeText(analysis.Dto.DespatchNo),
             null,
             null,
@@ -549,7 +605,6 @@ internal sealed class AxataG01InboundAtfImportService(
                     order.sip_evrakno_sira.HasValue &&
                     orderNos.Contains(order.sip_evrakno_sira.Value))
                 .ToArrayAsync(cancellationToken);
-        var existingMovementCounts = await GetExistingMovementCountsAsync(orderLines, cancellationToken);
         var existingRowKeys = await GetExistingRowKeysAsync(
             documents.SelectMany(document => document.Lines).ToArray(),
             series,
@@ -566,14 +621,14 @@ internal sealed class AxataG01InboundAtfImportService(
                     ? orderLinesByDocument.GetValueOrDefault(new MikroDocumentKey(serie, orderNo.Value)) ?? Array.Empty<SIPARISLER>()
                     : Array.Empty<SIPARISLER>();
                 var matchedLines = MatchLines(document, documentOrderLines);
-                var existingMovementLineCount = documentOrderLines.Sum(order => existingMovementCounts.GetValueOrDefault(order.sip_Guid)) +
-                    document.Lines.Count(line => existingRowKeys.Contains(BuildMovementGroupCode(line.SequenceNo)));
+                var existingAxataRowCount = document.Lines.Count(line =>
+                    existingRowKeys.Contains(BuildMovementGroupCode(line.SequenceNo)));
                 var warehouseNo = documentOrderLines
                     .Select(order => order.sip_depono ?? 0)
                     .Where(value => value > 0)
                     .Distinct()
                     .SingleOrDefault();
-                var warning = BuildWarning(document, serie, orderNo, documentOrderLines, matchedLines, existingMovementLineCount, warehouseNo);
+                var warning = BuildWarning(document, serie, orderNo, documentOrderLines, matchedLines, existingAxataRowCount, warehouseNo);
 
                 return new G01InboundAtfAnalysis(
                     document,
@@ -584,60 +639,71 @@ internal sealed class AxataG01InboundAtfImportService(
                         serie,
                         orderNo ?? 0,
                         document.Lines.Select(line => line.CustomerCode).FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? string.Empty,
-                        document.Lines.Select(line => line.DespatchNo).FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? string.Empty,
+                        document.DespatchNo,
                         warehouseNo,
                         document.Lines.Count,
                         document.Lines.Sum(line => line.Quantity),
                         documentOrderLines.Length,
                         documentOrderLines.Sum(order => order.sip_miktar ?? 0d),
                         documentOrderLines.Sum(order => order.sip_teslim_miktar ?? 0d),
-                        existingMovementLineCount,
+                        existingAxataRowCount,
                         string.IsNullOrWhiteSpace(warning),
                         warning));
             })
             .ToArray();
     }
 
-    private async Task<Dictionary<Guid, int>> GetExistingMovementCountsAsync(
-        IReadOnlyCollection<SIPARISLER> orderLines,
+    internal async Task<int> ResolveMovementOrderNoAsync(
+        string documentSerie,
+        int preferredOrderNo,
         CancellationToken cancellationToken)
     {
-        var orderGuids = orderLines.Select(order => order.sip_Guid).Where(guid => guid != Guid.Empty).Distinct().ToArray();
-        if (orderGuids.Length == 0)
+        var preferredExists = await mikroWriteDbContext.STOK_HAREKETLERIs
+            .AsNoTracking()
+            .AnyAsync(
+                movement =>
+                    movement.sth_evraktip == CompanyReceivingDocumentType &&
+                    movement.sth_evrakno_seri == documentSerie &&
+                    movement.sth_evrakno_sira == preferredOrderNo,
+                cancellationToken);
+
+        if (!preferredExists)
         {
-            return new Dictionary<Guid, int>();
+            return preferredOrderNo;
         }
 
-        var result = new Dictionary<Guid, int>();
-        foreach (var guidChunk in orderGuids.Chunk(ExistingMovementLookupChunkSize))
-        {
-            var rows = await mikroWriteDbContext.STOK_HAREKETLERIs
-                .AsNoTracking()
-                .Where(movement =>
-                    movement.sth_sip_uid.HasValue &&
-                    guidChunk.Contains(movement.sth_sip_uid.Value) &&
-                    movement.sth_iptal != true &&
-                    movement.sth_tip == MovementIn &&
-                    movement.sth_cins == MovementGenre &&
-                    movement.sth_evraktip == CompanyReceivingDocumentType)
-                .GroupBy(movement => movement.sth_sip_uid!.Value)
-                .Select(group => new
-                {
-                    OrderGuid = group.Key,
-                    Count = group.Count()
-                })
-                .ToMeasuredListAsync(
-                    logger,
-                    "Axata:G01:ExistingMovementCounts",
-                    cancellationToken);
+        var currentMax = await mikroWriteDbContext.STOK_HAREKETLERIs
+            .AsNoTracking()
+            .Where(movement =>
+                movement.sth_evraktip == CompanyReceivingDocumentType &&
+                movement.sth_evrakno_seri == documentSerie)
+            .MaxAsync(movement => movement.sth_evrakno_sira, cancellationToken);
 
-            foreach (var row in rows)
-            {
-                result[row.OrderGuid] = row.Count;
-            }
+        return currentMax.HasValue ? currentMax.Value + 1 : preferredOrderNo;
+    }
+
+    private async Task<int?> FindExistingMovementOrderNoAsync(
+        string documentSerie,
+        IReadOnlyCollection<string> rowKeys,
+        CancellationToken cancellationToken)
+    {
+        if (rowKeys.Count == 0 || string.IsNullOrWhiteSpace(documentSerie))
+        {
+            return null;
         }
 
-        return result;
+        return await mikroWriteDbContext.STOK_HAREKETLERIs
+            .AsNoTracking()
+            .Where(movement =>
+                movement.sth_evraktip == CompanyReceivingDocumentType &&
+                movement.sth_tip == MovementIn &&
+                movement.sth_cins == MovementGenre &&
+                movement.sth_normal_iade == NormalReturn &&
+                movement.sth_evrakno_seri == documentSerie &&
+                movement.sth_HareketGrupKodu1 != null &&
+                rowKeys.Contains(movement.sth_HareketGrupKodu1))
+            .Select(movement => movement.sth_evrakno_sira)
+            .FirstOrDefaultAsync(cancellationToken);
     }
 
     private async Task<HashSet<string>> GetExistingRowKeysAsync(
@@ -688,7 +754,73 @@ internal sealed class AxataG01InboundAtfImportService(
             [analysis.Dto.DocumentSerie],
             cancellationToken);
 
-        return existingRowKeys.SetEquals(expectedRowKeys);
+        if (existingRowKeys.SetEquals(expectedRowKeys))
+        {
+            return true;
+        }
+
+        return (await FindExistingReceiptAsync(analysis, cancellationToken))?.IsComplete == true;
+    }
+
+    internal async Task<ExistingG01Receipt?> FindExistingReceiptAsync(
+        G01InboundAtfAnalysis analysis,
+        CancellationToken cancellationToken)
+    {
+        var documentNo = NormalizeText(analysis.Dto.DespatchNo);
+        var expectedQuantities = analysis.MatchedLines
+            .Where(item => item.OrderLine.sip_Guid != Guid.Empty)
+            .GroupBy(item => item.OrderLine.sip_Guid)
+            .ToDictionary(group => group.Key, group => group.Sum(item => item.Line.Quantity));
+
+        if (string.IsNullOrWhiteSpace(documentNo) || expectedQuantities.Count == 0)
+        {
+            return null;
+        }
+
+        var orderGuids = expectedQuantities.Keys.ToArray();
+        var existingRows = await mikroWriteDbContext.STOK_HAREKETLERIs
+            .AsNoTracking()
+            .Where(movement =>
+                movement.sth_iptal != true &&
+                movement.sth_tip == MovementIn &&
+                movement.sth_cins == MovementGenre &&
+                movement.sth_normal_iade == NormalReturn &&
+                movement.sth_evraktip == CompanyReceivingDocumentType &&
+                movement.sth_evrakno_seri == analysis.Dto.DocumentSerie &&
+                movement.sth_belge_no == documentNo &&
+                movement.sth_sip_uid.HasValue &&
+                orderGuids.Contains(movement.sth_sip_uid.Value))
+            .Select(movement => new ExistingG01ReceiptLine(
+                movement.sth_evrakno_sira ?? 0,
+                movement.sth_sip_uid!.Value,
+                movement.sth_miktar ?? 0d))
+            .ToMeasuredListAsync(
+                logger,
+                "Axata:G01:ExistingReceiptEvidence",
+                cancellationToken);
+
+        if (existingRows.Count == 0)
+        {
+            return null;
+        }
+
+        var documentOrderNos = existingRows
+            .Select(row => row.DocumentOrderNo)
+            .Where(value => value > 0)
+            .Distinct()
+            .ToArray();
+        var actualQuantities = existingRows
+            .GroupBy(row => row.OrderGuid)
+            .ToDictionary(group => group.Key, group => group.Sum(row => row.Quantity));
+        var isComplete = documentOrderNos.Length == 1 &&
+            actualQuantities.Count == expectedQuantities.Count &&
+            expectedQuantities.All(expected =>
+                actualQuantities.TryGetValue(expected.Key, out var actualQuantity) &&
+                Math.Abs(actualQuantity - expected.Value) <= QuantityTolerance);
+
+        return new ExistingG01Receipt(
+            documentOrderNos.FirstOrDefault(analysis.Dto.DocumentOrderNo),
+            isComplete);
     }
 
     private static IReadOnlyCollection<MatchedG01InboundAtfLine> MatchLines(
@@ -1146,7 +1278,31 @@ internal sealed class AxataG01InboundAtfImportService(
             .ToArray();
     }
 
-    private static string BuildMovementGroupCode(long sequenceNo) =>
+    internal static IReadOnlyCollection<G01InboundAtfDocument> GroupDocuments(
+        IReadOnlyCollection<G01InboundAtfLine> lines) =>
+        lines
+            .GroupBy(
+                line => new G01DocumentGroupKey(
+                    NormalizeText(line.OrderDocumentNo),
+                    NormalizeText(line.DespatchNo)),
+                G01DocumentGroupKeyComparer.Instance)
+            .OrderBy(group => group.Min(line => line.SequenceNo))
+            .Select(group => new G01InboundAtfDocument(
+                group.Key.OrderDocumentNo,
+                group.Key.DespatchNo,
+                group.OrderBy(line => line.SequenceNo).ToArray()))
+            .ToArray();
+
+    internal static string BuildExternalDocumentNo(string orderDocumentNo, string? despatchNo)
+    {
+        var normalizedOrder = NormalizeText(orderDocumentNo);
+        var normalizedDespatch = NormalizeText(despatchNo);
+        return string.IsNullOrWhiteSpace(normalizedDespatch)
+            ? normalizedOrder
+            : $"{normalizedOrder}.{normalizedDespatch}";
+    }
+
+    internal static string BuildMovementGroupCode(long sequenceNo) =>
         $"AXATA-G01:{sequenceNo.ToString(CultureInfo.InvariantCulture)}";
 
     private static int? ParseInt(string? value) =>
@@ -1195,11 +1351,42 @@ internal sealed record G01InboundAtfLine(
 
 internal sealed record G01InboundAtfDocument(
     string OrderDocumentNo,
+    string DespatchNo,
     IReadOnlyCollection<G01InboundAtfLine> Lines);
+
+internal readonly record struct G01DocumentGroupKey(
+    string OrderDocumentNo,
+    string DespatchNo);
+
+internal sealed class G01DocumentGroupKeyComparer : IEqualityComparer<G01DocumentGroupKey>
+{
+    public static readonly G01DocumentGroupKeyComparer Instance = new();
+
+    public bool Equals(G01DocumentGroupKey x, G01DocumentGroupKey y) =>
+        StringComparer.OrdinalIgnoreCase.Equals(x.OrderDocumentNo, y.OrderDocumentNo) &&
+        StringComparer.OrdinalIgnoreCase.Equals(x.DespatchNo, y.DespatchNo);
+
+    public int GetHashCode(G01DocumentGroupKey obj)
+    {
+        var hash = new HashCode();
+        hash.Add(obj.OrderDocumentNo, StringComparer.OrdinalIgnoreCase);
+        hash.Add(obj.DespatchNo, StringComparer.OrdinalIgnoreCase);
+        return hash.ToHashCode();
+    }
+}
 
 internal sealed record MatchedG01InboundAtfLine(
     G01InboundAtfLine Line,
     SIPARISLER OrderLine);
+
+internal sealed record ExistingG01Receipt(
+    int DocumentOrderNo,
+    bool IsComplete);
+
+internal sealed record ExistingG01ReceiptLine(
+    int DocumentOrderNo,
+    Guid OrderGuid,
+    double Quantity);
 
 internal sealed record G01InboundAtfAnalysis(
     G01InboundAtfDocument Document,

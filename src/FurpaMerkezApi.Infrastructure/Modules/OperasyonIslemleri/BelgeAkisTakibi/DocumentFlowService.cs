@@ -664,6 +664,13 @@ public sealed class DocumentFlowService(
         {
             return;
         }
+        else if (request.Status == DocumentFlowStatus.Failed
+                 && flow.CurrentStep == request.Step
+                 && flow.Status == DocumentFlowStatus.Failed
+                 && string.Equals(flow.LastError, request.Error, StringComparison.Ordinal))
+        {
+            return;
+        }
 
         var flowEvent = flow.Record(
             request.Step,

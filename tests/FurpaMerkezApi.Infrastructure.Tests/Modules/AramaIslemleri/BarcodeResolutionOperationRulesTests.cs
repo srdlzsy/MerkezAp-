@@ -7,16 +7,33 @@ namespace FurpaMerkezApi.Infrastructure.Tests.Modules.AramaIslemleri;
 public sealed class BarcodeResolutionOperationRulesTests
 {
     [Theory]
-    [InlineData(null, "DLS.SGR.ROTHMANS", true)]
-    [InlineData(false, " DLS URUN", true)]
-    [InlineData(true, "DLS URUN", false)]
-    [InlineData(null, "AKTIF URUN", false)]
-    public void ShouldExcludeDlsForNonRefund_TreatsMissingRefundFlagAsNonRefund(
+    [InlineData("receiving", null, null, null, "DLS.SGR.ROTHMANS", true)]
+    [InlineData("receiving", null, null, false, " DLS URUN", true)]
+    [InlineData("order", null, null, null, "DLS.SGR.ROTHMANS", true)]
+    [InlineData("receiving", "depo-mal-kabul", null, null, "DLS.SGR.ROTHMANS", false)]
+    [InlineData("receiving", null, "depo-mal-kabulleri", false, "DLS.SGR.ROTHMANS", false)]
+    [InlineData("shipment", "giden-depolar-arasi-sevkler", null, false, "DLS.SGR.ROTHMANS", false)]
+    [InlineData("count", null, null, false, "DLS.SGR.ROTHMANS", false)]
+    [InlineData("waste", null, null, false, "DLS.SGR.ROTHMANS", false)]
+    [InlineData("return", null, null, false, "DLS.SGR.ROTHMANS", false)]
+    [InlineData(null, "virmanlar", "virmanlar", false, "DLS.SGR.ROTHMANS", false)]
+    [InlineData(null, null, null, false, " DLS URUN", false)]
+    [InlineData("receiving", null, null, true, "DLS URUN", false)]
+    [InlineData("receiving", null, null, false, "AKTIF URUN", false)]
+    public void ShouldExcludeDlsForOperation_UsesOperationContext(
+        string? operationType,
+        string? rawOperationType,
+        string? screenCode,
         bool? isRefund,
         string stockName,
         bool expected)
     {
-        var result = ResolveBarcodeUseCase.ShouldExcludeDlsForNonRefund(isRefund, stockName);
+        var result = ResolveBarcodeUseCase.ShouldExcludeDlsForOperation(
+            operationType,
+            rawOperationType,
+            screenCode,
+            isRefund,
+            stockName);
 
         Assert.Equal(expected, result);
     }
