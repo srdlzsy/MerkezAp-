@@ -463,18 +463,46 @@ public sealed class ResolveBarcodeUseCase(
             isOrderBlocked,
             isGoodsAcceptanceBlocked,
             isPassive);
-        var operationDecision = EvaluateOperationUsability(
-            operationType,
-            isSalesBlocked,
-            isOrderBlocked,
-            isGoodsAcceptanceBlocked,
-            isPassive,
-            isAllowedForSourceWarehouse,
-            sourceWarehouseNo,
-            shouldEnforceTargetWarehouse ? targetWarehouse.IsAllowed : null,
-            hasPurchaseRequirement,
-            shouldEnforcePurchaseRequirement,
-            isDlsExcludedForOperation);
+        OperationEvaluation operationDecision;
+        if (WarehouseOrderEligibilityRules.IsWarehouseOrderContext(operationType))
+        {
+            var warehouseOrderDecision = WarehouseOrderEligibilityRules.Evaluate(
+                request.WarehouseNo,
+                sourceWarehouseNo,
+                isPassive,
+                isDlsExcludedForOperation,
+                isOrderBlocked,
+                isAllowedForSourceWarehouse != false);
+            operationDecision = warehouseOrderDecision.IsEligible
+                ? EvaluateOperationUsability(
+                    operationType,
+                    isSalesBlocked,
+                    isOrderBlocked,
+                    isGoodsAcceptanceBlocked,
+                    isPassive,
+                    isAllowedForSourceWarehouse,
+                    sourceWarehouseNo,
+                    shouldEnforceTargetWarehouse ? targetWarehouse.IsAllowed : null,
+                    hasPurchaseRequirement,
+                    shouldEnforcePurchaseRequirement,
+                    isDlsExcludedForOperation)
+                : new OperationEvaluation(false, warehouseOrderDecision.Reason!);
+        }
+        else
+        {
+            operationDecision = EvaluateOperationUsability(
+                operationType,
+                isSalesBlocked,
+                isOrderBlocked,
+                isGoodsAcceptanceBlocked,
+                isPassive,
+                isAllowedForSourceWarehouse,
+                sourceWarehouseNo,
+                shouldEnforceTargetWarehouse ? targetWarehouse.IsAllowed : null,
+                hasPurchaseRequirement,
+                shouldEnforcePurchaseRequirement,
+                isDlsExcludedForOperation);
+        }
 
         if (!operationDecision.IsUsable)
         {

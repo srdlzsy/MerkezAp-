@@ -8,4 +8,5 @@ public sealed record ProductSearchRequest(
     string? SupplierCode,
     int Take,
     bool IncludeDelisted = true,
-    int? SourceWarehouseNo = null);
+    int? SourceWarehouseNo = null,
+    string? OperationType = null);

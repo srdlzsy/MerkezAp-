@@ -106,27 +106,99 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
         CreateIssuedWarehouseOrderRequest request,
         CancellationToken cancellationToken)
     {
+        var requestedStockCodes = request.Lines
+            .Select(line => line.StockCode.Trim())
+            .Where(stockCode => stockCode.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
         var catalogStockCodes = await SourceWarehouseOrderCatalogReader.ReadStockCodesAsync(
             mikroWriteDbContext.Database.GetDbConnection(),
             request.OutWarehouseNo,
             stockCode: null,
             cancellationToken,
             request.InWarehouseNo);
-        var invalidStockCodes = request.Lines
-            .Select(line => line.StockCode.Trim())
-            .Where(stockCode => stockCode.Length > 0 && !catalogStockCodes.Contains(stockCode))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(stockCode => stockCode, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
 
-        if (invalidStockCodes.Length == 0)
+        var decisions = new Dictionary<string, WarehouseOrderEligibilityDecision>(
+            StringComparer.OrdinalIgnoreCase);
+        foreach (var stockCodeBatch in requestedStockCodes.Chunk(StockCodeQueryBatchSize))
+        {
+            var stockStates = await mikroWriteDbContext.STOKLARs
+                .AsNoTracking()
+                .Where(stock => stockCodeBatch.Contains(stock.sto_kod))
+                .Select(stock => new
+                {
+                    StockCode = stock.sto_kod,
+                    StockName = stock.sto_isim,
+                    IsPassive = stock.sto_pasif_fl,
+                    OrderBlockCode = stock.sto_siparis_dursun
+                })
+                .ToListAsync(cancellationToken);
+            var targetStates = await mikroWriteDbContext.STOK_DEPO_DETAYLARIs
+                .AsNoTracking()
+                .Where(detail =>
+                    detail.sdp_depo_no == request.InWarehouseNo &&
+                    stockCodeBatch.Contains(detail.sdp_depo_kod))
+                .Select(detail => new
+                {
+                    StockCode = detail.sdp_depo_kod,
+                    IsPassive = detail.sdp_Pasif_fl,
+                    OrderBlockCode = detail.sdp_sipdursun
+                })
+                .ToListAsync(cancellationToken);
+            var targetStateByStockCode = targetStates
+                .GroupBy(
+                    state => (state.StockCode ?? string.Empty).Trim(),
+                    StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(
+                    group => group.Key,
+                    group => group.First(),
+                    StringComparer.OrdinalIgnoreCase);
+
+            foreach (var stockState in stockStates)
+            {
+                var stockCode = (stockState.StockCode ?? string.Empty).Trim();
+                targetStateByStockCode.TryGetValue(stockCode, out var targetState);
+                decisions[stockCode] = WarehouseOrderEligibilityRules.Evaluate(
+                    request.InWarehouseNo,
+                    request.OutWarehouseNo,
+                    (targetState?.IsPassive ?? stockState.IsPassive) == true,
+                    WarehouseOrderEligibilityRules.IsDelisted(stockState.StockName),
+                    (targetState?.OrderBlockCode ?? stockState.OrderBlockCode ?? 0) != 0,
+                    catalogStockCodes.Contains(stockCode));
+            }
+        }
+
+        var invalidProducts = requestedStockCodes
+            .Select(stockCode =>
+            {
+                if (decisions.TryGetValue(stockCode, out var decision))
+                {
+                    return (StockCode: stockCode, Decision: decision);
+                }
+
+                return (
+                    StockCode: stockCode,
+                    Decision: WarehouseOrderEligibilityRules.Evaluate(
+                        request.InWarehouseNo,
+                        request.OutWarehouseNo,
+                        false,
+                        false,
+                        false,
+                        false));
+            })
+            .Where(item => !item.Decision.IsEligible)
+            .OrderBy(item => item.StockCode, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (invalidProducts.Length == 0)
         {
             return;
         }
 
         throw new ArgumentException(
-            $"Su urunler kaynak depo {request.OutWarehouseNo} veya talep eden depo {request.InWarehouseNo} siparis katalogunda bulunmuyor ya da siparise kapali: " +
-            string.Join(", ", invalidStockCodes),
+            "Depo siparisi kaydedilemedi. " +
+            string.Join(
+                "; ",
+                invalidProducts.Select(item => $"{item.StockCode}: {item.Decision.Reason}")),
             nameof(request.Lines));
     }
 

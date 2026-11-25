@@ -1020,7 +1020,7 @@ public sealed class StockCardSearchHttpRequest
     [StringLength(100)]
     public string? SearchText { get; init; }
 
-    public bool IncludePassive { get; init; }
+    public bool IncludePassive { get; init; } = true;
 
     [Range(1, 200)]
     public int Take { get; init; } = 50;
@@ -1176,7 +1176,7 @@ public sealed class WarehouseCardSearchHttpRequest
     [StringLength(100)]
     public string? SearchText { get; init; }
 
-    public bool IncludePassive { get; init; }
+    public bool IncludePassive { get; init; } = true;
 
     [Range(1, 200)]
     public int Take { get; init; } = 50;
@@ -1345,7 +1345,7 @@ public sealed class CustomerCardSearchHttpRequest
     [StringLength(100)]
     public string? SearchText { get; init; }
 
-    public bool IncludePassive { get; init; }
+    public bool IncludePassive { get; init; } = true;
 
     [Range(1, 200)]
     public int Take { get; init; } = 50;

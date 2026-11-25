@@ -25773,8 +25773,8 @@ Bu bolum test hostundaki ApiExplorer ve Swagger metadata'sindan otomatik uretili
 | GET | `/api/arama-islemleri/cariler` | JWT | query: SearchText / string (zorunlu)<br>query: Take / integer (int32) | 401: ProblemDetails<br>200: IReadOnlyCollection&lt;CustomerLookupItemDto&gt;<br>400: ProblemDetails |
 | GET | `/api/arama-islemleri/depolar` | JWT | query: SearchText / string<br>query: WarehouseNo / integer (int32)<br>query: Take / integer (int32) | 401: ProblemDetails<br>200: IReadOnlyCollection&lt;WarehouseLookupItemDto&gt;<br>400: ProblemDetails |
 | GET | `/api/arama-islemleri/depolar/kaynaklar` | JWT | query: SearchText / string<br>query: Take / integer (int32) | 401: ProblemDetails<br>200: IReadOnlyCollection&lt;SourceWarehouseLookupItemDto&gt; |
-| GET | `/api/arama-islemleri/fiyat-gor` | JWT + arama-islemleri.fiyat-gor.list | query: WarehouseNo / integer (int32)<br>query: Barcode / string<br>query: StockCode / string<br>query: StockName / string<br>query: SupplierCode / string<br>query: CompanyCode / string<br>query: SourceWarehouseNo / integer (int32)<br>query: IncludeDelisted / boolean<br>query: Take / integer (int32) | 401: ProblemDetails<br>200: IReadOnlyCollection&lt;ProductLookupItemDto&gt;<br>400: ProblemDetails<br>403: ProblemDetails |
-| GET | `/api/arama-islemleri/urunler` | JWT | query: WarehouseNo / integer (int32)<br>query: Barcode / string<br>query: StockCode / string<br>query: StockName / string<br>query: SupplierCode / string<br>query: CompanyCode / string<br>query: SourceWarehouseNo / integer (int32)<br>query: IncludeDelisted / boolean<br>query: Take / integer (int32) | 401: ProblemDetails<br>200: IReadOnlyCollection&lt;ProductLookupItemDto&gt;<br>400: ProblemDetails |
+| GET | `/api/arama-islemleri/fiyat-gor` | JWT + arama-islemleri.fiyat-gor.list | query: WarehouseNo / integer (int32)<br>query: Barcode / string<br>query: StockCode / string<br>query: StockName / string<br>query: SupplierCode / string<br>query: CompanyCode / string<br>query: SourceWarehouseNo / integer (int32)<br>query: IncludeDelisted / boolean<br>query: OperationType / string<br>query: Take / integer (int32) | 401: ProblemDetails<br>200: IReadOnlyCollection&lt;ProductLookupItemDto&gt;<br>400: ProblemDetails<br>403: ProblemDetails |
+| GET | `/api/arama-islemleri/urunler` | JWT | query: WarehouseNo / integer (int32)<br>query: Barcode / string<br>query: StockCode / string<br>query: StockName / string<br>query: SupplierCode / string<br>query: CompanyCode / string<br>query: SourceWarehouseNo / integer (int32)<br>query: IncludeDelisted / boolean<br>query: OperationType / string<br>query: Take / integer (int32) | 401: ProblemDetails<br>200: IReadOnlyCollection&lt;ProductLookupItemDto&gt;<br>400: ProblemDetails |
 | GET | `/api/arama-islemleri/urunler/{stockCode}/cari-onerileri` | JWT | path: stockCode / string (zorunlu)<br>query: WarehouseNo / integer (int32)<br>query: Take / integer (int32) | 401: ProblemDetails<br>200: ProductCustomerSuggestionResponse<br>400: ProblemDetails |
 | GET | `/api/arama-islemleri/urunler/{stockCode}/son-kunye` | Anonim | path: stockCode / string (zorunlu)<br>query: WarehouseNo / integer (int32) | 401: ProblemDetails<br>200: ProductLatestTagDto<br>400: ProblemDetails |
 | GET | `/api/arama-islemleri/var-yok` | JWT + arama-islemleri.var-yok.list | query: WarehouseNo / integer (int32)<br>query: Barcode / string<br>query: StockCode / string<br>query: StockName / string<br>query: IncludeDelisted / boolean<br>query: Take / integer (int32) | 401: ProblemDetails<br>200: IReadOnlyCollection&lt;ProductAvailabilityItemDto&gt;<br>400: ProblemDetails<br>403: ProblemDetails |
@@ -26982,9 +26982,12 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `isOrderBlocked` | boolean | Hayir |  |
 | `isPassive` | boolean | Hayir |  |
 | `isSalesBlocked` | boolean | Hayir |  |
+| `isUsableInOperation` | boolean | Hayir |  |
 | `isVariableWeightBarcode` | boolean | Hayir |  |
 | `lookupBarcode` | string | Hayir | nullable |
 | `modelCode` | string | Hayir | nullable |
+| `operationDecision` | string | Hayir | nullable |
+| `operationDecisionCode` | string | Hayir | nullable |
 | `orderBlockCode` | integer (int32) | Hayir | nullable |
 | `price` | number (double) | Hayir |  |
 | `priceTypeCode` | integer (int32) | Hayir |  |

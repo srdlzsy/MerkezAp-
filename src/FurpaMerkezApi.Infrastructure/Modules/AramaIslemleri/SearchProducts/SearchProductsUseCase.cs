@@ -41,6 +41,8 @@ public sealed class SearchProductsUseCase(
         var stockCode = NormalizeOrNull(request.StockCode);
         var stockName = NormalizeOrNull(request.StockName);
         var supplierCode = NormalizeOrNull(request.SupplierCode);
+        var isWarehouseOrderSearch = WarehouseOrderEligibilityRules.IsWarehouseOrderContext(
+            request.OperationType);
 
         if (barcodeLookup is null && stockCode is null && stockName is null && supplierCode is null)
         {
@@ -74,10 +76,14 @@ public sealed class SearchProductsUseCase(
                     cancellationToken)
                 : null;
 
-            if (sourceWarehouseStockCodes is { Count: 0 })
+            if (!isWarehouseOrderSearch && sourceWarehouseStockCodes is { Count: 0 })
             {
                 return Array.Empty<ProductLookupItemDto>();
             }
+
+            var querySourceWarehouseStockCodes = isWarehouseOrderSearch
+                ? null
+                : sourceWarehouseStockCodes;
 
             IReadOnlyCollection<ProductLookupItemDto> products;
 
@@ -91,7 +97,7 @@ public sealed class SearchProductsUseCase(
                     stockName,
                     supplierCode,
                     lookupTake,
-                    sourceWarehouseStockCodes,
+                    querySourceWarehouseStockCodes,
                     allowPartialSuffix: true,
                     cancellationToken);
             }
@@ -103,7 +109,7 @@ public sealed class SearchProductsUseCase(
                     stockName!,
                     supplierCode,
                     lookupTake,
-                    sourceWarehouseStockCodes,
+                    querySourceWarehouseStockCodes,
                     cancellationToken);
             }
             else
@@ -117,7 +123,7 @@ public sealed class SearchProductsUseCase(
                     supplierCode,
                     lookupTake,
                     null,
-                    sourceWarehouseStockCodes,
+                    querySourceWarehouseStockCodes,
                     cancellationToken);
             }
 
@@ -134,7 +140,7 @@ public sealed class SearchProductsUseCase(
                     null,
                     supplierCode,
                     lookupTake,
-                    sourceWarehouseStockCodes,
+                    querySourceWarehouseStockCodes,
                     allowPartialSuffix: true,
                     cancellationToken);
             }
@@ -143,7 +149,7 @@ public sealed class SearchProductsUseCase(
                 connection,
                 products,
                 request.WarehouseNo,
-                request.IncludeDelisted,
+                isWarehouseOrderSearch || request.IncludeDelisted,
                 take,
                 cancellationToken);
 
@@ -154,11 +160,19 @@ public sealed class SearchProductsUseCase(
                 request.WarehouseNo,
                 cancellationToken);
 
-            return await EnrichWithProcurementSourcesAsync(
+            products = await EnrichWithProcurementSourcesAsync(
                 connection,
                 products,
                 request.WarehouseNo,
                 cancellationToken);
+
+            return isWarehouseOrderSearch
+                ? ApplyWarehouseOrderEligibility(
+                    products,
+                    request.WarehouseNo,
+                    request.SourceWarehouseNo,
+                    sourceWarehouseStockCodes)
+                : products;
         }
         finally
         {
@@ -168,6 +182,34 @@ public sealed class SearchProductsUseCase(
             }
         }
     }
+
+    private static IReadOnlyCollection<ProductLookupItemDto> ApplyWarehouseOrderEligibility(
+        IReadOnlyCollection<ProductLookupItemDto> products,
+        int targetWarehouseNo,
+        int? sourceWarehouseNo,
+        IReadOnlySet<string>? sourceWarehouseStockCodes) =>
+        products
+            .Select(product =>
+            {
+                var isAllowedForSourceWarehouse =
+                    sourceWarehouseStockCodes is null ||
+                    sourceWarehouseStockCodes.Contains(product.StockCode.Trim());
+                var decision = WarehouseOrderEligibilityRules.Evaluate(
+                    targetWarehouseNo,
+                    sourceWarehouseNo,
+                    product.IsPassive,
+                    product.IsDelisted,
+                    product.IsOrderBlocked,
+                    isAllowedForSourceWarehouse);
+
+                return product with
+                {
+                    IsUsableInOperation = decision.IsEligible,
+                    OperationDecisionCode = decision.Code,
+                    OperationDecision = decision.Reason
+                };
+            })
+            .ToArray();
 
     private static async Task<IReadOnlyCollection<ProductLookupItemDto>> ReadProductsByUnifiedNumericInputAsync(
         DbConnection connection,

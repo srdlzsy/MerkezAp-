@@ -48,7 +48,8 @@ public sealed class AramaIslemleriController(
                 request.CompanyCode ?? request.SupplierCode,
                 request.Take,
                 request.IncludeDelisted,
-                request.SourceWarehouseNo),
+                request.SourceWarehouseNo,
+                request.OperationType),
             cancellationToken));
     }
 
@@ -358,6 +359,8 @@ public sealed class ProductSearchHttpRequest
     public int? SourceWarehouseNo { get; init; }
 
     public bool IncludeDelisted { get; init; } = true;
+
+    public string? OperationType { get; init; }
 
     [Range(1, 150)]
     public int Take { get; init; } = 150;
