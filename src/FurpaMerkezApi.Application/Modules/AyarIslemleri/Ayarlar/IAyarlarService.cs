@@ -137,8 +137,25 @@ public interface IAyarlarService
 
     Task<B2BUserDetailDto> GetB2BUserAsync(Guid userId, CancellationToken cancellationToken);
 
+    Task<B2BUserDetailDto> CreateB2BUserAsync(
+        CreateB2BUserRequest request,
+        CancellationToken cancellationToken);
+
     Task<B2BUserDetailDto> UpdateB2BUserAsync(
         Guid userId,
         UpdateB2BUserRequest request,
+        CancellationToken cancellationToken);
+
+    Task ResetB2BUserPasswordAsync(
+        Guid userId,
+        ResetB2BUserPasswordRequest request,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyCollection<B2BMenuOptionDto>> ListB2BMenusAsync(
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyCollection<B2BAccountLookupDto>> SearchB2BAccountsAsync(
+        string? search,
+        int take,
         CancellationToken cancellationToken);
 }

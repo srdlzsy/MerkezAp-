@@ -476,7 +476,7 @@ public sealed class CashRegisterTerminalManagementTests
     }
 
     private static AyarlarService CreateService(TestContexts contexts) =>
-        new(contexts.Furpa, contexts.FurpaB2B);
+        new(contexts.Furpa, contexts.FurpaB2B, contexts.Mikro);
 
     private static async Task SeedCashRegisterAsync(TestContexts contexts)
     {
@@ -518,6 +518,9 @@ public sealed class CashRegisterTerminalManagementTests
             new FurpaB2BDbContext(new DbContextOptionsBuilder<FurpaB2BDbContext>()
                 .UseInMemoryDatabase($"terminal-b2b-{suffix}")
                 .Options),
+            new MikroDbContext(new DbContextOptionsBuilder<MikroDbContext>()
+                .UseInMemoryDatabase($"terminal-mikro-read-{suffix}")
+                .Options),
             new MikroWriteDbContext(new DbContextOptionsBuilder<MikroWriteDbContext>()
                 .UseInMemoryDatabase($"terminal-mikro-{suffix}")
                 .Options));
@@ -536,16 +539,19 @@ public sealed class CashRegisterTerminalManagementTests
     private sealed class TestContexts(
         FurpaDbContext furpa,
         FurpaB2BDbContext furpaB2B,
+        MikroDbContext mikro,
         MikroWriteDbContext mikroWrite) : IAsyncDisposable
     {
         public FurpaDbContext Furpa { get; } = furpa;
         public FurpaB2BDbContext FurpaB2B { get; } = furpaB2B;
+        public MikroDbContext Mikro { get; } = mikro;
         public MikroWriteDbContext MikroWrite { get; } = mikroWrite;
 
         public async ValueTask DisposeAsync()
         {
             await Furpa.DisposeAsync();
             await FurpaB2B.DisposeAsync();
+            await Mikro.DisposeAsync();
             await MikroWrite.DisposeAsync();
         }
     }

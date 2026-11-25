@@ -103,11 +103,37 @@ public sealed class B2BAyarlariController(IAyarlarService ayarlarService)
         CancellationToken cancellationToken) =>
         Ok(await ayarlarService.GetB2BUserAsync(userId, cancellationToken));
 
+    [HttpPost("kullanicilar")]
+    [Authorize(Policy = CreatePolicy)]
+    [ProducesResponseType(typeof(B2BUserDetailDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<B2BUserDetailDto>> CreateUser(
+        [FromBody] CreateB2BUserHttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await ayarlarService.CreateB2BUserAsync(
+            new CreateB2BUserRequest(
+                request.UserFullName!,
+                request.UserMail!,
+                request.Password!,
+                request.Status ?? true,
+                request.Menus,
+                request.UserEndDate!.Value,
+                request.Accounts?
+                    .Select(item => new B2BUserAccountInput(item.AccountId!.Value, item.Category ?? "01"))
+                    .ToArray()),
+            cancellationToken);
+
+        return StatusCode(StatusCodes.Status201Created, response);
+    }
+
     [HttpPut("kullanicilar/{userId:guid}")]
     [Authorize(Policy = UpdatePolicy)]
     [ProducesResponseType(typeof(B2BUserDetailDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<ActionResult<B2BUserDetailDto>> UpdateUser(
         Guid userId,
         [FromBody] UpdateB2BUserHttpRequest request,
@@ -119,7 +145,46 @@ public sealed class B2BAyarlariController(IAyarlarService ayarlarService)
                 request.UserMail!,
                 request.Status!.Value,
                 request.Menus,
-                request.UserEndDate!.Value),
+                request.UserEndDate!.Value,
+                request.Accounts?
+                    .Select(item => new B2BUserAccountInput(item.AccountId!.Value, item.Category ?? "01"))
+                    .ToArray()),
+            cancellationToken));
+
+    [HttpPost("kullanicilar/{userId:guid}/sifre-sifirla")]
+    [Authorize(Policy = UpdatePolicy)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ResetUserPassword(
+        Guid userId,
+        [FromBody] ResetB2BUserPasswordHttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        await ayarlarService.ResetB2BUserPasswordAsync(
+            userId,
+            new ResetB2BUserPasswordRequest(request.NewPassword!),
+            cancellationToken);
+
+        return NoContent();
+    }
+
+    [HttpGet("menuler")]
+    [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<B2BMenuOptionDto>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyCollection<B2BMenuOptionDto>>> Menus(
+        CancellationToken cancellationToken) =>
+        Ok(await ayarlarService.ListB2BMenusAsync(cancellationToken));
+
+    [HttpGet("cariler")]
+    [Authorize(Policy = ListPolicy)]
+    [ProducesResponseType(typeof(IReadOnlyCollection<B2BAccountLookupDto>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyCollection<B2BAccountLookupDto>>> Accounts(
+        [FromQuery] B2BAccountSearchHttpRequest request,
+        CancellationToken cancellationToken) =>
+        Ok(await ayarlarService.SearchB2BAccountsAsync(
+            request.Search,
+            request.Take ?? 20,
             cancellationToken));
 }
 
@@ -154,6 +219,49 @@ public sealed class B2BUserListHttpRequest
     public int? Take { get; init; }
 }
 
+public sealed class B2BAccountSearchHttpRequest
+{
+    [StringLength(100)]
+    public string? Search { get; init; }
+
+    [Range(1, 100)]
+    public int? Take { get; init; }
+}
+
+public sealed class B2BUserAccountInputHttpRequest
+{
+    [Required]
+    public Guid? AccountId { get; init; }
+
+    [StringLength(50)]
+    public string? Category { get; init; }
+}
+
+public sealed class CreateB2BUserHttpRequest
+{
+    [Required(AllowEmptyStrings = false)]
+    [StringLength(70)]
+    public string? UserFullName { get; init; }
+
+    [Required(AllowEmptyStrings = false)]
+    [StringLength(150)]
+    [EmailAddress]
+    public string? UserMail { get; init; }
+
+    [Required(AllowEmptyStrings = false)]
+    [StringLength(100, MinimumLength = 6)]
+    public string? Password { get; init; }
+
+    public bool? Status { get; init; }
+
+    public string? Menus { get; init; }
+
+    [Required]
+    public DateTime? UserEndDate { get; init; }
+
+    public IReadOnlyCollection<B2BUserAccountInputHttpRequest>? Accounts { get; init; }
+}
+
 public sealed class UpdateB2BUserHttpRequest
 {
     [Required(AllowEmptyStrings = false)]
@@ -172,4 +280,13 @@ public sealed class UpdateB2BUserHttpRequest
 
     [Required]
     public DateTime? UserEndDate { get; init; }
+
+    public IReadOnlyCollection<B2BUserAccountInputHttpRequest>? Accounts { get; init; }
+}
+
+public sealed class ResetB2BUserPasswordHttpRequest
+{
+    [Required(AllowEmptyStrings = false)]
+    [StringLength(100, MinimumLength = 6)]
+    public string? NewPassword { get; init; }
 }

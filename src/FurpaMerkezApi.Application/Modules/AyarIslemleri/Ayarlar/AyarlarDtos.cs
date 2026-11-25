@@ -214,16 +214,51 @@ public sealed record B2BUserDetailDto(
     DateTime CreateDate,
     string Menus,
     DateTime UserEndDate,
-    IReadOnlyCollection<B2BUserAccountDto> Accounts);
+    IReadOnlyCollection<B2BUserAccountDto> Accounts,
+    int AccountCount = 0,
+    IReadOnlyCollection<string>? Categories = null);
 
 public sealed record B2BUserAccountDto(
     int Id,
     Guid AccountId,
+    string Category,
+    string? AccountCode = null,
+    string? AccountTitle = null);
+
+public sealed record B2BUserAccountInput(
+    Guid AccountId,
     string Category);
+
+public sealed record CreateB2BUserRequest(
+    string UserFullName,
+    string UserMail,
+    string Password,
+    bool Status,
+    string? Menus,
+    DateTime UserEndDate,
+    IReadOnlyCollection<B2BUserAccountInput>? Accounts = null);
 
 public sealed record UpdateB2BUserRequest(
     string UserFullName,
     string UserMail,
     bool Status,
     string? Menus,
-    DateTime UserEndDate);
+    DateTime UserEndDate,
+    IReadOnlyCollection<B2BUserAccountInput>? Accounts = null);
+
+public sealed record ResetB2BUserPasswordRequest(
+    string NewPassword);
+
+public sealed record B2BMenuOptionDto(
+    int Id,
+    string MenuName,
+    string MenuRoute,
+    string MenuIcon,
+    int MenuGroupId,
+    string MenuGroupName);
+
+public sealed record B2BAccountLookupDto(
+    Guid AccountId,
+    string AccountCode,
+    string AccountTitle,
+    string? TaxNumber);

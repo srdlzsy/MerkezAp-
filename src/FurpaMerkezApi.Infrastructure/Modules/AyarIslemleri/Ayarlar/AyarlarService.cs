@@ -4,11 +4,13 @@ using System.Globalization;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Security.Cryptography;
+using System.Text;
 using FurpaMerkezApi.Application.Modules.AyarIslemleri.Ayarlar;
 using FurpaMerkezApi.Infrastructure.Persistence.Furpa;
 using FurpaMerkezApi.Infrastructure.Persistence.Furpa.Models;
 using FurpaMerkezApi.Infrastructure.Persistence.FurpaB2B;
 using FurpaMerkezApi.Infrastructure.Persistence.FurpaB2B.Models;
+using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using Microsoft.EntityFrameworkCore;
 using FurpaCashRegisterDetailEntity = FurpaMerkezApi.Infrastructure.Persistence.Furpa.Models.CashRegisterDetailEntity;
 
@@ -16,7 +18,8 @@ namespace FurpaMerkezApi.Infrastructure.Modules.AyarIslemleri.Ayarlar;
 
 public sealed class AyarlarService(
     FurpaDbContext furpaDbContext,
-    FurpaB2BDbContext furpaB2BDbContext)
+    FurpaB2BDbContext furpaB2BDbContext,
+    MikroDbContext mikroDbContext)
     : IAyarlarService
 {
     private const int DevicePingTimeoutMilliseconds = 1000;
@@ -1140,14 +1143,53 @@ public sealed class AyarlarService(
             .FirstOrDefaultAsync(item => item.UserId == userId, cancellationToken)
             ?? throw new KeyNotFoundException("B2B user was not found.");
 
-        var accounts = await furpaB2BDbContext.UserAccounts
-            .AsNoTracking()
-            .Where(item => item.UserId == userId)
-            .OrderBy(item => item.Category)
-            .ThenBy(item => item.Id)
-            .ToArrayAsync(cancellationToken);
+        return await BuildB2BUserDetailAsync(user, cancellationToken);
+    }
 
-        return ToB2BUserDetailDto(user, accounts);
+    public async Task<B2BUserDetailDto> CreateB2BUserAsync(
+        CreateB2BUserRequest request,
+        CancellationToken cancellationToken)
+    {
+        var userFullName = NormalizeText(request.UserFullName, 70, nameof(request.UserFullName));
+        var userMail = NormalizeText(request.UserMail, 150, nameof(request.UserMail));
+        var (passwordSalt, passwordHash) = CreateB2BPasswordHash(request.Password);
+        var normalizedMenus = NormalizeB2BMenus(request.Menus);
+        var normalizedAccounts = NormalizeB2BAccountInputs(request.Accounts);
+
+        await EnsureB2BUserMailAvailableAsync(userMail, excludedUserId: null, cancellationToken);
+
+        var user = new B2BUserEntity
+        {
+            UserId = Guid.NewGuid(),
+            UserFullName = userFullName,
+            UserMail = userMail,
+            UserPasswordSalt = passwordSalt,
+            UserPasswordHash = passwordHash,
+            Status = request.Status,
+            CreateDate = DateTime.Now,
+            Menus = normalizedMenus,
+            UserEndDate = request.UserEndDate
+        };
+
+        await furpaB2BDbContext.Users.AddAsync(user, cancellationToken);
+
+        if (normalizedAccounts.Count > 0)
+        {
+            var accountEntities = normalizedAccounts
+                .Select(account => new B2BUserAccountEntity
+                {
+                    UserId = user.UserId,
+                    AccountId = account.AccountId,
+                    Category = account.Category
+                })
+                .ToArray();
+
+            await furpaB2BDbContext.UserAccounts.AddRangeAsync(accountEntities, cancellationToken);
+        }
+
+        await furpaB2BDbContext.SaveChangesAsync(cancellationToken);
+
+        return await BuildB2BUserDetailAsync(user, cancellationToken);
     }
 
     public async Task<B2BUserDetailDto> UpdateB2BUserAsync(
@@ -1159,22 +1201,290 @@ public sealed class AyarlarService(
             .FirstOrDefaultAsync(item => item.UserId == userId, cancellationToken)
             ?? throw new KeyNotFoundException("B2B user was not found.");
 
-        user.UserFullName = NormalizeText(request.UserFullName, 70, nameof(request.UserFullName));
-        user.UserMail = NormalizeText(request.UserMail, 150, nameof(request.UserMail));
+        var userFullName = NormalizeText(request.UserFullName, 70, nameof(request.UserFullName));
+        var userMail = NormalizeText(request.UserMail, 150, nameof(request.UserMail));
+
+        await EnsureB2BUserMailAvailableAsync(userMail, userId, cancellationToken);
+
+        user.UserFullName = userFullName;
+        user.UserMail = userMail;
         user.Status = request.Status;
-        user.Menus = NormalizeNullableText(request.Menus);
+        user.Menus = NormalizeB2BMenus(request.Menus);
         user.UserEndDate = request.UserEndDate;
+
+        if (request.Accounts is not null)
+        {
+            var normalizedAccounts = NormalizeB2BAccountInputs(request.Accounts);
+            var desiredKeys = normalizedAccounts
+                .Select(account => (account.AccountId, CategoryKey: account.Category.ToUpperInvariant()))
+                .ToHashSet();
+
+            var existingAccounts = await furpaB2BDbContext.UserAccounts
+                .Where(item => item.UserId == userId)
+                .ToArrayAsync(cancellationToken);
+
+            var accountsToRemove = existingAccounts
+                .Where(item => !desiredKeys.Contains((item.AccountId, item.Category.Trim().ToUpperInvariant())))
+                .ToArray();
+
+            if (accountsToRemove.Length > 0)
+            {
+                furpaB2BDbContext.UserAccounts.RemoveRange(accountsToRemove);
+            }
+
+            var existingKeys = existingAccounts
+                .Select(item => (item.AccountId, CategoryKey: item.Category.Trim().ToUpperInvariant()))
+                .ToHashSet();
+
+            var accountsToAdd = normalizedAccounts
+                .Where(account => !existingKeys.Contains((account.AccountId, account.Category.ToUpperInvariant())))
+                .Select(account => new B2BUserAccountEntity
+                {
+                    UserId = userId,
+                    AccountId = account.AccountId,
+                    Category = account.Category
+                })
+                .ToArray();
+
+            if (accountsToAdd.Length > 0)
+            {
+                await furpaB2BDbContext.UserAccounts.AddRangeAsync(accountsToAdd, cancellationToken);
+            }
+        }
 
         await furpaB2BDbContext.SaveChangesAsync(cancellationToken);
 
+        return await BuildB2BUserDetailAsync(user, cancellationToken);
+    }
+
+    public async Task ResetB2BUserPasswordAsync(
+        Guid userId,
+        ResetB2BUserPasswordRequest request,
+        CancellationToken cancellationToken)
+    {
+        var user = await furpaB2BDbContext.Users
+            .FirstOrDefaultAsync(item => item.UserId == userId, cancellationToken)
+            ?? throw new KeyNotFoundException("B2B user was not found.");
+
+        var (passwordSalt, passwordHash) = CreateB2BPasswordHash(request.NewPassword);
+        user.UserPasswordSalt = passwordSalt;
+        user.UserPasswordHash = passwordHash;
+
+        await furpaB2BDbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyCollection<B2BMenuOptionDto>> ListB2BMenusAsync(
+        CancellationToken cancellationToken)
+    {
+        return await furpaB2BDbContext.Menus
+            .AsNoTracking()
+            .Where(menu => menu.Status)
+            .Join(
+                furpaB2BDbContext.MenuGroups.AsNoTracking().Where(group => group.Status),
+                menu => menu.MenuGroupId,
+                group => group.Id,
+                (menu, group) => new
+                {
+                    menu.Id,
+                    menu.MenuName,
+                    menu.MenuRoute,
+                    menu.MenuIcon,
+                    menu.MenuGroupId,
+                    group.MenuGroupName
+                })
+            .OrderBy(item => item.MenuGroupId)
+            .ThenBy(item => item.Id)
+            .Select(item => new B2BMenuOptionDto(
+                item.Id,
+                item.MenuName,
+                item.MenuRoute,
+                item.MenuIcon,
+                item.MenuGroupId,
+                item.MenuGroupName))
+            .ToArrayAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyCollection<B2BAccountLookupDto>> SearchB2BAccountsAsync(
+        string? search,
+        int take,
+        CancellationToken cancellationToken)
+    {
+        var normalizedTake = NormalizeTake(take, 20, 100);
+        var filter = search?.Trim();
+
+        var query = mikroDbContext.CARI_HESAPLARs
+            .AsNoTracking()
+            .Where(item => !(item.cari_iptal ?? false));
+
+        if (!string.IsNullOrWhiteSpace(filter))
+        {
+            query = query.Where(item =>
+                (item.cari_kod != null && EF.Functions.Like(item.cari_kod, $"%{filter}%")) ||
+                (item.cari_unvan1 != null && EF.Functions.Like(item.cari_unvan1, $"%{filter}%")) ||
+                (item.cari_unvan2 != null && EF.Functions.Like(item.cari_unvan2, $"%{filter}%")) ||
+                (item.cari_vdaire_no != null && EF.Functions.Like(item.cari_vdaire_no, $"%{filter}%")));
+        }
+
+        var rows = await query
+            .OrderBy(item => item.cari_kod)
+            .ThenBy(item => item.cari_unvan1)
+            .Take(normalizedTake)
+            .Select(item => new
+            {
+                item.cari_Guid,
+                item.cari_kod,
+                item.cari_unvan1,
+                item.cari_unvan2,
+                item.cari_vdaire_no
+            })
+            .ToArrayAsync(cancellationToken);
+
+        return rows
+            .Select(item => new B2BAccountLookupDto(
+                item.cari_Guid,
+                item.cari_kod?.Trim() ?? string.Empty,
+                FormatMikroAccountTitle(item.cari_unvan1, item.cari_unvan2),
+                string.IsNullOrWhiteSpace(item.cari_vdaire_no) ? null : item.cari_vdaire_no.Trim()))
+            .ToArray();
+    }
+
+    private async Task EnsureB2BUserMailAvailableAsync(
+        string userMail,
+        Guid? excludedUserId,
+        CancellationToken cancellationToken)
+    {
+        var normalizedMailLower = userMail.ToLowerInvariant();
+        var exists = await furpaB2BDbContext.Users
+            .AsNoTracking()
+            .AnyAsync(
+                item => item.UserMail.ToLower() == normalizedMailLower &&
+                        (!excludedUserId.HasValue || item.UserId != excludedUserId.Value),
+                cancellationToken);
+
+        if (exists)
+        {
+            throw new InvalidOperationException($"Bu e-posta adresi ile kayitli B2B kullanicisi zaten var: {userMail}");
+        }
+    }
+
+    private async Task<B2BUserDetailDto> BuildB2BUserDetailAsync(
+        B2BUserEntity user,
+        CancellationToken cancellationToken)
+    {
         var accounts = await furpaB2BDbContext.UserAccounts
             .AsNoTracking()
-            .Where(item => item.UserId == userId)
+            .Where(item => item.UserId == user.UserId)
             .OrderBy(item => item.Category)
             .ThenBy(item => item.Id)
             .ToArrayAsync(cancellationToken);
 
-        return ToB2BUserDetailDto(user, accounts);
+        Dictionary<Guid, (string Code, string Title)> accountInfoById = [];
+        if (accounts.Length > 0)
+        {
+            var accountIds = accounts.Select(item => item.AccountId).Distinct().ToArray();
+            var mikroAccounts = await mikroDbContext.CARI_HESAPLARs
+                .AsNoTracking()
+                .Where(item => accountIds.Contains(item.cari_Guid))
+                .Select(item => new
+                {
+                    item.cari_Guid,
+                    item.cari_kod,
+                    item.cari_unvan1,
+                    item.cari_unvan2
+                })
+                .ToArrayAsync(cancellationToken);
+
+            accountInfoById = mikroAccounts
+                .GroupBy(item => item.cari_Guid)
+                .ToDictionary(
+                    group => group.Key,
+                    group =>
+                    {
+                        var first = group.First();
+                        return (
+                            Code: first.cari_kod?.Trim() ?? string.Empty,
+                            Title: FormatMikroAccountTitle(first.cari_unvan1, first.cari_unvan2));
+                    });
+        }
+
+        return ToB2BUserDetailDto(user, accounts, accountInfoById);
+    }
+
+    private static (byte[] PasswordSalt, byte[] PasswordHash) CreateB2BPasswordHash(string? password)
+    {
+        if (string.IsNullOrWhiteSpace(password) || password.Length < 6)
+        {
+            throw new ArgumentException("Sifre en az 6 karakter olmalidir.", nameof(password));
+        }
+
+        if (password.Length > 100)
+        {
+            throw new ArgumentException("Sifre en fazla 100 karakter olmalidir.", nameof(password));
+        }
+
+        using var hmac = new HMACSHA512();
+        var salt = hmac.Key;
+        var hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(password));
+        return (salt, hash);
+    }
+
+    private static string? NormalizeB2BMenus(string? menus)
+    {
+        if (string.IsNullOrWhiteSpace(menus))
+        {
+            return null;
+        }
+
+        var parts = menus
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(part => !string.IsNullOrWhiteSpace(part))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return parts.Length == 0 ? null : string.Join(",", parts);
+    }
+
+    private static IReadOnlyList<B2BUserAccountInput> NormalizeB2BAccountInputs(
+        IReadOnlyCollection<B2BUserAccountInput>? accounts)
+    {
+        if (accounts is null || accounts.Count == 0)
+        {
+            return [];
+        }
+
+        var result = new List<B2BUserAccountInput>(accounts.Count);
+        var seen = new HashSet<(Guid AccountId, string CategoryKey)>();
+
+        foreach (var account in accounts)
+        {
+            if (account.AccountId == Guid.Empty)
+            {
+                throw new ArgumentException("Bagli hesap kimligi gecersiz.", nameof(accounts));
+            }
+
+            var category = string.IsNullOrWhiteSpace(account.Category)
+                ? "01"
+                : NormalizeText(account.Category, 50, nameof(account.Category));
+            var key = (account.AccountId, category.ToUpperInvariant());
+            if (seen.Add(key))
+            {
+                result.Add(new B2BUserAccountInput(account.AccountId, category));
+            }
+        }
+
+        return result;
+    }
+
+    private static string FormatMikroAccountTitle(string? unvan1, string? unvan2)
+    {
+        var first = unvan1?.Trim();
+        var second = unvan2?.Trim();
+        if (string.IsNullOrEmpty(first))
+        {
+            return second ?? string.Empty;
+        }
+
+        return string.IsNullOrEmpty(second) ? first : $"{first} {second}";
     }
 
     private static async Task<DeviceStatusDto> CheckSingleDeviceStatusAsync(DeviceStatusSource device)
@@ -1491,7 +1801,8 @@ public sealed class AyarlarService(
 
     private static B2BUserDetailDto ToB2BUserDetailDto(
         B2BUserEntity item,
-        IReadOnlyCollection<B2BUserAccountEntity> accounts) =>
+        IReadOnlyCollection<B2BUserAccountEntity> accounts,
+        IReadOnlyDictionary<Guid, (string Code, string Title)> accountInfoById) =>
         new(
             item.UserId,
             item.UserFullName,
@@ -1501,10 +1812,23 @@ public sealed class AyarlarService(
             item.Menus ?? string.Empty,
             item.UserEndDate,
             accounts
-                .Select(account => new B2BUserAccountDto(
-                    account.Id,
-                    account.AccountId,
-                    account.Category))
+                .Select(account =>
+                {
+                    var hasInfo = accountInfoById.TryGetValue(account.AccountId, out var info);
+                    return new B2BUserAccountDto(
+                        account.Id,
+                        account.AccountId,
+                        account.Category,
+                        hasInfo && !string.IsNullOrEmpty(info.Code) ? info.Code : null,
+                        hasInfo && !string.IsNullOrEmpty(info.Title) ? info.Title : null);
+                })
+                .ToArray(),
+            accounts.Count,
+            accounts
+                .Select(account => account.Category)
+                .Where(category => !string.IsNullOrWhiteSpace(category))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(category => category)
                 .ToArray());
 
     private static void ValidateBranchRequest(CreateBranchSettingsRequest request)

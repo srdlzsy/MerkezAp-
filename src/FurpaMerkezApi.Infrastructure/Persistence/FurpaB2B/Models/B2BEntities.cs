@@ -42,3 +42,29 @@ public sealed class B2BUserAccountEntity
 
     public string Category { get; set; } = string.Empty;
 }
+
+public sealed class B2BMenuGroupEntity
+{
+    public int Id { get; set; }
+
+    public string MenuGroupName { get; set; } = string.Empty;
+
+    public string MenuGroupIcon { get; set; } = string.Empty;
+
+    public bool Status { get; set; }
+}
+
+public sealed class B2BMenuEntity
+{
+    public int Id { get; set; }
+
+    public string MenuName { get; set; } = string.Empty;
+
+    public string MenuRoute { get; set; } = string.Empty;
+
+    public string MenuIcon { get; set; } = string.Empty;
+
+    public int MenuGroupId { get; set; }
+
+    public bool Status { get; set; }
+}

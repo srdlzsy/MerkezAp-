@@ -92,7 +92,7 @@ public sealed class CashierSynchronizationTests
     }
 
     private static AyarlarService CreateService(TestContexts contexts) =>
-        new(contexts.Furpa, contexts.FurpaB2B);
+        new(contexts.Furpa, contexts.FurpaB2B, contexts.Mikro);
 
     private static TestContexts CreateContexts()
     {
@@ -104,14 +104,14 @@ public sealed class CashierSynchronizationTests
         var furpaB2BOptions = new DbContextOptionsBuilder<FurpaB2BDbContext>()
             .UseInMemoryDatabase($"cashier-b2b-{databaseSuffix}")
             .Options;
-        var mikroWriteOptions = new DbContextOptionsBuilder<MikroWriteDbContext>()
+        var mikroOptions = new DbContextOptionsBuilder<MikroDbContext>()
             .UseInMemoryDatabase($"cashier-mikro-{databaseSuffix}")
             .Options;
 
         return new TestContexts(
             new FurpaDbContext(furpaOptions),
             new FurpaB2BDbContext(furpaB2BOptions),
-            new MikroWriteDbContext(mikroWriteOptions));
+            new MikroDbContext(mikroOptions));
     }
 
     private static async Task SeedCashierAsync(FurpaDbContext dbContext)
@@ -155,19 +155,19 @@ public sealed class CashierSynchronizationTests
     private sealed class TestContexts(
         FurpaDbContext furpa,
         FurpaB2BDbContext furpaB2B,
-        MikroWriteDbContext mikroWrite) : IAsyncDisposable
+        MikroDbContext mikro) : IAsyncDisposable
     {
         public FurpaDbContext Furpa { get; } = furpa;
 
         public FurpaB2BDbContext FurpaB2B { get; } = furpaB2B;
 
-        public MikroWriteDbContext MikroWrite { get; } = mikroWrite;
+        public MikroDbContext Mikro { get; } = mikro;
 
         public async ValueTask DisposeAsync()
         {
             await Furpa.DisposeAsync();
             await FurpaB2B.DisposeAsync();
-            await MikroWrite.DisposeAsync();
+            await Mikro.DisposeAsync();
         }
     }
 }

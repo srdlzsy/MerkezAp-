@@ -11,6 +11,10 @@ public sealed class FurpaB2BDbContext(DbContextOptions<FurpaB2BDbContext> option
 
     public DbSet<B2BUserAccountEntity> UserAccounts => Set<B2BUserAccountEntity>();
 
+    public DbSet<B2BMenuGroupEntity> MenuGroups => Set<B2BMenuGroupEntity>();
+
+    public DbSet<B2BMenuEntity> Menus => Set<B2BMenuEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<B2BBulletinEntity>(entity =>
@@ -42,6 +46,25 @@ public sealed class FurpaB2BDbContext(DbContextOptions<FurpaB2BDbContext> option
             entity.HasKey(item => item.Id);
             entity.Property(item => item.Id).HasColumnName("id").ValueGeneratedOnAdd();
             entity.Property(item => item.Category).HasColumnType("nvarchar(max)");
+        });
+
+        modelBuilder.Entity<B2BMenuGroupEntity>(entity =>
+        {
+            entity.ToTable("MenuGroups");
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.Id).HasColumnName("id").ValueGeneratedOnAdd();
+            entity.Property(item => item.MenuGroupName).HasMaxLength(70);
+            entity.Property(item => item.MenuGroupIcon).HasMaxLength(50);
+        });
+
+        modelBuilder.Entity<B2BMenuEntity>(entity =>
+        {
+            entity.ToTable("Menus");
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.Id).HasColumnName("id").ValueGeneratedOnAdd();
+            entity.Property(item => item.MenuName).HasMaxLength(120);
+            entity.Property(item => item.MenuRoute).HasMaxLength(50);
+            entity.Property(item => item.MenuIcon).HasMaxLength(50);
         });
     }
 }
