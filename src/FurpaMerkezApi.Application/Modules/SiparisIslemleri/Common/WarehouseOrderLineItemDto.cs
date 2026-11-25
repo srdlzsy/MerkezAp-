@@ -31,6 +31,10 @@ public sealed record WarehouseOrderLineGreenGrocerCaseDto(
     int? AverageCaseCount,
     double? CoefficientOfVariation,
     string Confidence,
+    bool RequiresManualApproval,
+    bool AllowOrderLinking,
+    double OverDeliveryTolerancePercent,
+    double SevereOverDeliveryMultiplier,
     double? ActualShippedQuantity,
     double? ActualShippedCaseCount,
     string Status);

@@ -4,6 +4,7 @@ using FurpaMerkezApi.Infrastructure.Persistence;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace FurpaMerkezApi.Infrastructure.Tests.Modules.GreenGrocer.Reports;
@@ -17,7 +18,10 @@ public sealed class GreenGrocerReportsUseCaseTests
         await using var authDb = CreateAuthDbContext();
         SeedReportData(mikroDb);
         await mikroDb.SaveChangesAsync();
-        var useCase = new GreenGrocerReportsUseCase(mikroDb, authDb);
+        var useCase = new GreenGrocerReportsUseCase(
+            mikroDb,
+            authDb,
+            NullLogger<GreenGrocerReportsUseCase>.Instance);
 
         var result = await useCase.GetByBranchAsync(
             new GreenGrocerReportDateRequest(new DateTime(2026, 10, 20), Take: 1),
@@ -38,7 +42,10 @@ public sealed class GreenGrocerReportsUseCaseTests
         await using var authDb = CreateAuthDbContext();
         SeedReportData(mikroDb);
         await mikroDb.SaveChangesAsync();
-        var useCase = new GreenGrocerReportsUseCase(mikroDb, authDb);
+        var useCase = new GreenGrocerReportsUseCase(
+            mikroDb,
+            authDb,
+            NullLogger<GreenGrocerReportsUseCase>.Instance);
 
         var result = await useCase.GetGreensAsync(
             new GreenGrocerReportDateRequest(new DateTime(2026, 10, 20), Take: 1),
@@ -69,7 +76,10 @@ public sealed class GreenGrocerReportsUseCaseTests
             CreateOrder(101, "F101", 1, 2, "MYV-2"),
             CreateOrder(101, "F101", 1, 3, "MYV-1"));
         await mikroDb.SaveChangesAsync();
-        var useCase = new GreenGrocerReportsUseCase(mikroDb, authDb);
+        var useCase = new GreenGrocerReportsUseCase(
+            mikroDb,
+            authDb,
+            NullLogger<GreenGrocerReportsUseCase>.Instance);
         var request = new GreenGrocerReportDateRequest(new DateTime(2026, 10, 20));
 
         var branch = await useCase.GetByBranchAsync(request, CancellationToken.None);

@@ -28,4 +28,6 @@ public sealed record CreateInterWarehouseShipmentLineRequest(
     int LotNo = 0,
     string? ProjectCode = null,
     string? CustomerResponsibilityCenter = null,
-    string? ProductResponsibilityCenter = null);
+    string? ProductResponsibilityCenter = null,
+    Guid? GreenGrocerReferenceOrderLineGuid = null,
+    bool GreenGrocerOverDeliveryConfirmed = false);

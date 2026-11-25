@@ -36,6 +36,10 @@ public sealed class GreenGrocerOrderLineSnapshot
         int? averageCaseCount,
         double? coefficientOfVariation,
         string confidence,
+        bool requiresManualApproval,
+        bool allowOrderLinking,
+        double overDeliveryTolerancePercent,
+        double severeOverDeliveryMultiplier,
         Guid createdByUserId,
         DateTime createdAtUtc)
     {
@@ -60,6 +64,10 @@ public sealed class GreenGrocerOrderLineSnapshot
         AverageCaseCount = averageCaseCount;
         CoefficientOfVariation = coefficientOfVariation;
         Confidence = NormalizeRequired(confidence, nameof(confidence), 30);
+        RequiresManualApproval = requiresManualApproval;
+        AllowOrderLinking = allowOrderLinking;
+        OverDeliveryTolerancePercent = overDeliveryTolerancePercent;
+        SevereOverDeliveryMultiplier = severeOverDeliveryMultiplier;
         ActualShippedQuantity = null;
         ActualShippedCaseCount = null;
         Status = "Ordered";
@@ -111,6 +119,14 @@ public sealed class GreenGrocerOrderLineSnapshot
 
     public string Confidence { get; private set; }
 
+    public bool RequiresManualApproval { get; private set; }
+
+    public bool AllowOrderLinking { get; private set; }
+
+    public double OverDeliveryTolerancePercent { get; private set; }
+
+    public double SevereOverDeliveryMultiplier { get; private set; }
+
     public double? ActualShippedQuantity { get; private set; }
 
     public double? ActualShippedCaseCount { get; private set; }
@@ -124,6 +140,28 @@ public sealed class GreenGrocerOrderLineSnapshot
     public Guid? UpdatedByUserId { get; private set; }
 
     public DateTime? UpdatedAtUtc { get; private set; }
+
+    public void RecordShipment(
+        double actualShippedQuantity,
+        double? actualShippedCaseCount,
+        Guid? updatedByUserId,
+        DateTime updatedAtUtc)
+    {
+        if (actualShippedQuantity < 0d)
+        {
+            throw new ArgumentOutOfRangeException(nameof(actualShippedQuantity));
+        }
+
+        ActualShippedQuantity = actualShippedQuantity;
+        ActualShippedCaseCount = actualShippedCaseCount;
+        Status = actualShippedQuantity <= 0d
+            ? "Ordered"
+            : actualShippedQuantity + 0.0005d >= EstimatedQuantity
+                ? "Shipped"
+                : "PartiallyShipped";
+        UpdatedByUserId = updatedByUserId;
+        UpdatedAtUtc = updatedAtUtc;
+    }
 
     private static string NormalizeRequired(string value, string parameterName, int maxLength)
     {

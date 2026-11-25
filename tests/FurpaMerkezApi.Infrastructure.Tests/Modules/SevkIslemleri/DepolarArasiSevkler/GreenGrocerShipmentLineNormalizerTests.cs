@@ -31,6 +31,28 @@ public sealed class GreenGrocerShipmentLineNormalizerTests
     }
 
     [Fact]
+    public async Task DetachWarehouseOrderLinksAsync_UsesConfiguredGreenGrocerSourceWarehouse()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.STOKLARs.Add(CreateStock("001082", "10"));
+        await dbContext.SaveChangesAsync();
+        var linkedGuid = Guid.Parse("533812a5-38aa-4115-88ce-5a45c1895580");
+        var request = CreateRequest(
+            sourceWarehouseNo: 60,
+            new CreateInterWarehouseShipmentLineRequest("001082", 39.49d, linkedGuid));
+
+        var lines = await GreenGrocerShipmentLineNormalizer.DetachWarehouseOrderLinksAsync(
+            dbContext,
+            request,
+            request.Lines.ToArray(),
+            orderLinkingEnabled: false,
+            CancellationToken.None,
+            greenGrocerSourceWarehouseNo: 60);
+
+        Assert.Null(lines.Single().WarehouseOrderLineGuid);
+    }
+
+    [Fact]
     public async Task DetachWarehouseOrderLinksAsync_RemovesLinkedOrderGuidForGreenGrocerSarfStock()
     {
         await using var dbContext = CreateDbContext();

@@ -7,4 +7,10 @@ public sealed class GreenGrocerProductCaseOptions
     public bool Enabled { get; init; } = true;
 
     public bool OrderLinkingEnabled { get; init; }
+
+    public int SourceWarehouseNo { get; init; } = 56;
+
+    public double DefaultOverDeliveryTolerancePercent { get; init; } = 20d;
+
+    public double SevereOverDeliveryMultiplier { get; init; } = 1.5d;
 }

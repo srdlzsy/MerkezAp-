@@ -7,12 +7,14 @@ using FurpaMerkezApi.Application.Common.Errors;
 using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.DepolarArasiSevkler.Create;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenDepoSiparisleri.Create;
+using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.Infrastructure.Modules.Common;
 using FurpaMerkezApi.Infrastructure.Modules.EntegrasyonIslemleri.AxataSenkronizasyonu;
 using FurpaMerkezApi.Infrastructure.Modules.GreenGrocer.ProductCases;
 using FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.VerilenDepoSiparisleri.Create;
 using FurpaMerkezApi.Infrastructure.OfflineSync;
+using FurpaMerkezApi.Infrastructure.Persistence;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 using FurpaMerkezApi.Infrastructure.Services.MikroApi;
@@ -23,6 +25,13 @@ using Microsoft.Extensions.Options;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.SevkIslemleri.DepolarArasiSevkler.Create;
 
+internal enum GreenGrocerShipmentSeverity
+{
+    Normal,
+    ConfirmationRequired,
+    Critical
+}
+
 public sealed class CreateInterWarehouseShipmentUseCase(
     MikroWriteDbContext mikroWriteDbContext,
     IOptions<MikroWriteOptions> mikroWriteOptions,
@@ -30,6 +39,7 @@ public sealed class CreateInterWarehouseShipmentUseCase(
     IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
     IOptionsMonitor<MikroWriteBatchingOptions> mikroWriteBatchingOptions,
     IOptionsMonitor<GreenGrocerProductCaseOptions> greenGrocerProductCaseOptions,
+    AuthDbContext authDbContext,
     MikroApiClient mikroApiClient,
     MobileOfflineSyncService mobileOfflineSyncService,
     ILogger<CreateInterWarehouseShipmentUseCase> logger)
@@ -65,8 +75,9 @@ public sealed class CreateInterWarehouseShipmentUseCase(
                 .ToArray()
         };
         Validate(request);
+        request = await AttachGreenGrocerReferencesAsync(request, cancellationToken);
 
-        return await OfflineCreateGuard.ExecuteAsync(
+        var response = await OfflineCreateGuard.ExecuteAsync(
             mobileOfflineSyncService,
             OfflineOperationCode,
             request.RequestedByUserId,
@@ -80,6 +91,9 @@ public sealed class CreateInterWarehouseShipmentUseCase(
             verifyCompletedWithRecovery: true,
             validateBeforeReservation: innerCancellationToken =>
                 ValidateLinkedOrdersBeforeReservationAsync(request, innerCancellationToken));
+
+        await TryTrackGreenGrocerShipmentAsync(request, response);
+        return response;
     }
 
     public Task<OfflineSyncStatusDto<CreateInterWarehouseShipmentResponse>> GetOfflineSyncStatusAsync(
@@ -232,7 +246,8 @@ public sealed class CreateInterWarehouseShipmentUseCase(
             request,
             request.Lines.ToArray(),
             IsGreenGrocerOrderLinkingEnabled(),
-            cancellationToken);
+            cancellationToken,
+            ResolveGreenGrocerSourceWarehouseNo());
         LogCreatePhase("normalize-green-grocer-lines", lines.Length);
         var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
 
@@ -472,7 +487,8 @@ public sealed class CreateInterWarehouseShipmentUseCase(
             request,
             request.Lines.ToArray(),
             IsGreenGrocerOrderLinkingEnabled(),
-            cancellationToken);
+            cancellationToken,
+            ResolveGreenGrocerSourceWarehouseNo());
 
         await using var createLock = await AcquireShipmentCreateLockAsync(documentSerie, cancellationToken);
         mikroWriteDbContext.ChangeTracker.Clear();
@@ -1573,7 +1589,9 @@ public sealed class CreateInterWarehouseShipmentUseCase(
         IReadOnlyList<CreateInterWarehouseShipmentLineRequest> lines)
     {
         var automationOptions = axataOptions.Value.WarehouseOrderAutomation;
-        if (GreenGrocerShipmentLineNormalizer.IsGreenGrocerSourceWarehouse(request.SourceWarehouseNo) ||
+        if (GreenGrocerShipmentLineNormalizer.IsGreenGrocerSourceWarehouse(
+                request.SourceWarehouseNo,
+                ResolveGreenGrocerSourceWarehouseNo()) ||
             !automationOptions.Enabled ||
             !automationOptions.CreateForInterWarehouseShipments ||
             !automationOptions.WarehouseNos.Contains(request.TargetWarehouseNo))
@@ -1595,6 +1613,12 @@ public sealed class CreateInterWarehouseShipmentUseCase(
     {
         var currentOptions = greenGrocerProductCaseOptions.CurrentValue;
         return currentOptions.Enabled && currentOptions.OrderLinkingEnabled;
+    }
+
+    private int ResolveGreenGrocerSourceWarehouseNo()
+    {
+        var configured = greenGrocerProductCaseOptions.CurrentValue.SourceWarehouseNo;
+        return configured > 0 ? configured : 56;
     }
 
     private static CreateInterWarehouseShipmentLineRequest[] ApplyAutomaticWarehouseOrderLineGuids(
@@ -1621,7 +1645,9 @@ public sealed class CreateInterWarehouseShipmentUseCase(
         CancellationToken cancellationToken)
     {
         var automationOptions = axataOptions.Value.WarehouseOrderAutomation;
-        if (GreenGrocerShipmentLineNormalizer.IsGreenGrocerSourceWarehouse(request.SourceWarehouseNo) ||
+        if (GreenGrocerShipmentLineNormalizer.IsGreenGrocerSourceWarehouse(
+                request.SourceWarehouseNo,
+                ResolveGreenGrocerSourceWarehouseNo()) ||
             !automationOptions.Enabled ||
             !automationOptions.CreateForInterWarehouseShipments ||
             !automationOptions.WarehouseNos.Contains(request.TargetWarehouseNo))
@@ -1769,10 +1795,324 @@ public sealed class CreateInterWarehouseShipmentUseCase(
             request,
             request.Lines.ToArray(),
             IsGreenGrocerOrderLinkingEnabled(),
-            cancellationToken);
+            cancellationToken,
+            ResolveGreenGrocerSourceWarehouseNo());
 
         await GetAndValidateLinkedOrderLinesAsync(request, lines, cancellationToken);
+        await ValidateGreenGrocerShipmentReferencesAsync(request, cancellationToken);
         mikroWriteDbContext.ChangeTracker.Clear();
+    }
+
+    private async Task<CreateInterWarehouseShipmentRequest> AttachGreenGrocerReferencesAsync(
+        CreateInterWarehouseShipmentRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!greenGrocerProductCaseOptions.CurrentValue.Enabled ||
+            !GreenGrocerShipmentLineNormalizer.IsGreenGrocerSourceWarehouse(
+                request.SourceWarehouseNo,
+                ResolveGreenGrocerSourceWarehouseNo()))
+        {
+            return request;
+        }
+
+        var candidateGuids = request.Lines
+            .SelectMany(line => new[]
+            {
+                line.GreenGrocerReferenceOrderLineGuid,
+                line.WarehouseOrderLineGuid
+            })
+            .Where(value => value.HasValue)
+            .Select(value => value!.Value)
+            .Distinct()
+            .ToArray();
+        if (candidateGuids.Length == 0)
+        {
+            return request;
+        }
+
+        IReadOnlyCollection<Guid> snapshotLineGuids;
+        try
+        {
+            snapshotLineGuids = await authDbContext.GreenGrocerOrderLineSnapshots
+                .AsNoTracking()
+                .Where(snapshot => candidateGuids.Contains(snapshot.WarehouseOrderLineGuid))
+                .Select(snapshot => snapshot.WarehouseOrderLineGuid)
+                .ToListAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(
+                exception,
+                "Manav siparis snapshot tablosu okunamadi; sevk klasik Mikro akisi ile devam edecek.");
+            return DetachGreenGrocerReferences(request);
+        }
+
+        var snapshotLineGuidSet = snapshotLineGuids.ToHashSet();
+
+        return request with
+        {
+            Lines = request.Lines
+                .Select(line => line.GreenGrocerReferenceOrderLineGuid.HasValue ||
+                                !line.WarehouseOrderLineGuid.HasValue ||
+                                !snapshotLineGuidSet.Contains(line.WarehouseOrderLineGuid.Value)
+                    ? line
+                    : line with
+                    {
+                        GreenGrocerReferenceOrderLineGuid = line.WarehouseOrderLineGuid
+                    })
+                .ToArray()
+        };
+    }
+
+    private async Task ValidateGreenGrocerShipmentReferencesAsync(
+        CreateInterWarehouseShipmentRequest request,
+        CancellationToken cancellationToken)
+    {
+        var referencedLines = request.Lines
+            .Where(line => line.GreenGrocerReferenceOrderLineGuid.HasValue)
+            .GroupBy(line => line.GreenGrocerReferenceOrderLineGuid!.Value)
+            .ToArray();
+
+        if (referencedLines.Length == 0)
+        {
+            return;
+        }
+
+        var referenceGuids = referencedLines.Select(group => group.Key).ToArray();
+        IReadOnlyDictionary<Guid, GreenGrocerOrderLineSnapshot> snapshots;
+        try
+        {
+            snapshots = await authDbContext.GreenGrocerOrderLineSnapshots
+                .AsNoTracking()
+                .Where(snapshot => referenceGuids.Contains(snapshot.WarehouseOrderLineGuid))
+                .ToDictionaryAsync(snapshot => snapshot.WarehouseOrderLineGuid, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(
+                exception,
+                "Manav sevk snapshot dogrulamasi calistirilamadi; sevk klasik Mikro kurallariyla devam edecek.");
+            return;
+        }
+
+        foreach (var group in referencedLines)
+        {
+            if (!snapshots.TryGetValue(group.Key, out var snapshot))
+            {
+                throw new KeyNotFoundException($"Green grocer order line reference was not found: {group.Key}");
+            }
+
+            if (snapshot.SourceWarehouseNo != request.SourceWarehouseNo ||
+                snapshot.TargetWarehouseNo != request.TargetWarehouseNo ||
+                group.Any(line => !string.Equals(
+                    line.StockCode.Trim(),
+                    snapshot.StockCode,
+                    StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new OperationConflictException(
+                    OperationConflictErrorCodes.MikroDocumentContentMismatch,
+                    "Manav sevk satiri secilen siparis, depo veya urunle eslesmiyor.",
+                    retryable: false);
+            }
+
+            var currentShipmentQuantity = group.Sum(line => line.Quantity);
+            var previousShipmentQuantity = snapshot.ActualShippedQuantity.GetValueOrDefault();
+            var actualQuantity = previousShipmentQuantity + currentShipmentQuantity;
+            var expectedQuantity = snapshot.EstimatedQuantity;
+            var warningLimit = expectedQuantity * (1d + (snapshot.OverDeliveryTolerancePercent / 100d));
+            var criticalLimit = expectedQuantity * snapshot.SevereOverDeliveryMultiplier;
+            var confirmed = group.All(line => line.GreenGrocerOverDeliveryConfirmed);
+
+            if (expectedQuantity <= 0d || criticalLimit <= warningLimit)
+            {
+                throw new OperationConflictException(
+                    OperationConflictErrorCodes.MikroDocumentContentMismatch,
+                    "Manav siparis tolerans bilgisi gecersiz. Profil ve siparis satirini kontrol edin.",
+                    retryable: false);
+            }
+
+            var severity = EvaluateGreenGrocerShipmentSeverity(
+                expectedQuantity,
+                actualQuantity,
+                snapshot.OverDeliveryTolerancePercent,
+                snapshot.SevereOverDeliveryMultiplier);
+
+            if (severity == GreenGrocerShipmentSeverity.Critical)
+            {
+                throw new OperationConflictException(
+                    OperationConflictErrorCodes.GreenGrocerOverDeliveryCritical,
+                    $"Manav sevki kritik siniri asiyor: {snapshot.StockCode}, beklenen {expectedQuantity:N3} {snapshot.MicroUnit}, onceki sevk {previousShipmentQuantity:N3}, bu sevk {currentShipmentQuantity:N3}, toplam {actualQuantity:N3} {snapshot.MicroUnit}, kritik sinir {criticalLimit:N3} {snapshot.MicroUnit}. Miktari duzeltmeden sevk olusturulamaz.",
+                    retryable: false);
+            }
+
+            if ((severity == GreenGrocerShipmentSeverity.ConfirmationRequired ||
+                 snapshot.RequiresManualApproval) &&
+                !confirmed)
+            {
+                throw new OperationConflictException(
+                    OperationConflictErrorCodes.GreenGrocerOverDeliveryConfirmationRequired,
+                    $"Manav sevki kullanici onayi gerektiriyor: {snapshot.StockCode}, beklenen {expectedQuantity:N3} {snapshot.MicroUnit}, onceki sevk {previousShipmentQuantity:N3}, bu sevk {currentShipmentQuantity:N3}, toplam {actualQuantity:N3} {snapshot.MicroUnit}, toleransli ust sinir {warningLimit:N3} {snapshot.MicroUnit}.",
+                    retryable: false);
+            }
+        }
+    }
+
+    private static CreateInterWarehouseShipmentRequest DetachGreenGrocerReferences(
+        CreateInterWarehouseShipmentRequest request) =>
+        request with
+        {
+            Lines = request.Lines
+                .Select(line => line with
+                {
+                    GreenGrocerReferenceOrderLineGuid = null,
+                    GreenGrocerOverDeliveryConfirmed = false
+                })
+                .ToArray()
+        };
+
+    private async Task TryTrackGreenGrocerShipmentAsync(
+        CreateInterWarehouseShipmentRequest request,
+        CreateInterWarehouseShipmentResponse response)
+    {
+        var referencedLines = request.Lines
+            .Where(line => line.GreenGrocerReferenceOrderLineGuid.HasValue)
+            .GroupBy(line => line.GreenGrocerReferenceOrderLineGuid!.Value)
+            .ToArray();
+        if (referencedLines.Length == 0 || !request.ClientRequestId.HasValue)
+        {
+            return;
+        }
+
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            await TrackGreenGrocerShipmentAsync(request, response, referencedLines, timeout.Token);
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(
+                exception,
+                "Manav sevk toplamlari destek tablosuna yazilamadi. ClientRequestId={ClientRequestId}, DocumentSerie={DocumentSerie}, DocumentOrderNo={DocumentOrderNo}",
+                request.ClientRequestId,
+                response.DocumentSerie,
+                response.DocumentOrderNo);
+        }
+    }
+
+    private async Task TrackGreenGrocerShipmentAsync(
+        CreateInterWarehouseShipmentRequest request,
+        CreateInterWarehouseShipmentResponse response,
+        IReadOnlyCollection<IGrouping<Guid, CreateInterWarehouseShipmentLineRequest>> referencedLines,
+        CancellationToken cancellationToken)
+    {
+        var clientRequestId = request.ClientRequestId
+            ?? throw new InvalidOperationException("Client request id is required for green grocer shipment tracking.");
+        var referenceGuids = referencedLines.Select(group => group.Key).ToArray();
+        await using var transaction = await authDbContext.Database.BeginTransactionAsync(
+            IsolationLevel.Serializable,
+            cancellationToken);
+
+        var snapshots = await authDbContext.GreenGrocerOrderLineSnapshots
+            .Where(snapshot => referenceGuids.Contains(snapshot.WarehouseOrderLineGuid))
+            .ToDictionaryAsync(snapshot => snapshot.WarehouseOrderLineGuid, cancellationToken);
+
+        var existingReferences = await authDbContext.GreenGrocerShipmentLineRecords
+            .AsNoTracking()
+            .Where(record =>
+                record.ClientRequestId == clientRequestId &&
+                referenceGuids.Contains(record.WarehouseOrderLineGuid))
+            .Select(record => record.WarehouseOrderLineGuid)
+            .ToListAsync(cancellationToken);
+        var existingReferenceSet = existingReferences.ToHashSet();
+        var createdAtUtc = DateTime.UtcNow;
+
+        foreach (var group in referencedLines)
+        {
+            if (existingReferenceSet.Contains(group.Key) ||
+                !snapshots.TryGetValue(group.Key, out var snapshot))
+            {
+                continue;
+            }
+
+            await authDbContext.GreenGrocerShipmentLineRecords.AddAsync(
+                new GreenGrocerShipmentLineRecord(
+                    Guid.NewGuid(),
+                    clientRequestId,
+                    snapshot.Id,
+                    group.Key,
+                    response.DocumentSerie,
+                    response.DocumentOrderNo,
+                    group.Sum(line => line.Quantity),
+                    createdAtUtc),
+                cancellationToken);
+        }
+
+        await authDbContext.SaveChangesAsync(cancellationToken);
+
+        var snapshotIds = snapshots.Values.Select(snapshot => snapshot.Id).ToArray();
+        var actualQuantities = await authDbContext.GreenGrocerShipmentLineRecords
+            .AsNoTracking()
+            .Where(record => snapshotIds.Contains(record.OrderLineSnapshotId))
+            .GroupBy(record => record.OrderLineSnapshotId)
+            .Select(group => new { SnapshotId = group.Key, ActualQuantity = group.Sum(item => item.ActualQuantity) })
+            .ToDictionaryAsync(item => item.SnapshotId, item => item.ActualQuantity, cancellationToken);
+
+        foreach (var snapshot in snapshots.Values)
+        {
+            var actualQuantity = actualQuantities.GetValueOrDefault(snapshot.Id);
+            var actualCaseCount = ResolveActualCaseCount(snapshot, actualQuantity);
+            snapshot.RecordShipment(
+                actualQuantity,
+                actualCaseCount,
+                request.RequestedByUserId,
+                createdAtUtc);
+        }
+
+        await authDbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    private static double? ResolveActualCaseCount(
+        GreenGrocerOrderLineSnapshot snapshot,
+        double actualQuantity)
+    {
+        if (snapshot.EstimatedQuantity <= 0d ||
+            (!string.Equals(snapshot.InputMode, "Case", StringComparison.OrdinalIgnoreCase) &&
+             !string.Equals(snapshot.InputMode, "Pack", StringComparison.OrdinalIgnoreCase)))
+        {
+            return null;
+        }
+
+        return Math.Round(
+            actualQuantity * snapshot.InputQuantity / snapshot.EstimatedQuantity,
+            3,
+            MidpointRounding.AwayFromZero);
+    }
+
+    internal static GreenGrocerShipmentSeverity EvaluateGreenGrocerShipmentSeverity(
+        double expectedQuantity,
+        double actualQuantity,
+        double tolerancePercent,
+        double severeMultiplier)
+    {
+        var warningLimit = expectedQuantity * (1d + (tolerancePercent / 100d));
+        var criticalLimit = expectedQuantity * severeMultiplier;
+        if (actualQuantity >= criticalLimit)
+        {
+            return GreenGrocerShipmentSeverity.Critical;
+        }
+
+        return actualQuantity > warningLimit
+            ? GreenGrocerShipmentSeverity.ConfirmationRequired
+            : GreenGrocerShipmentSeverity.Normal;
     }
 
     private static bool ShouldUpdateLinkedOrderDeliveredQuantities(

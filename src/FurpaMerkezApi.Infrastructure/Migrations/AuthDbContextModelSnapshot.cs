@@ -6483,6 +6483,10 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                         .HasColumnType("float")
                         .HasColumnName("actual_shipped_quantity");
 
+                    b.Property<bool>("AllowOrderLinking")
+                        .HasColumnType("bit")
+                        .HasColumnName("allow_order_linking");
+
                     b.Property<int?>("AverageCaseCount")
                         .HasColumnType("int")
                         .HasColumnName("average_case_count");
@@ -6559,9 +6563,21 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                         .HasColumnType("datetime2")
                         .HasColumnName("order_date");
 
+                    b.Property<double>("OverDeliveryTolerancePercent")
+                        .HasColumnType("float")
+                        .HasColumnName("over_delivery_tolerance_percent");
+
+                    b.Property<bool>("RequiresManualApproval")
+                        .HasColumnType("bit")
+                        .HasColumnName("requires_manual_approval");
+
                     b.Property<int>("RowNo")
                         .HasColumnType("int")
                         .HasColumnName("row_no");
+
+                    b.Property<double>("SevereOverDeliveryMultiplier")
+                        .HasColumnType("float")
+                        .HasColumnName("severe_over_delivery_multiplier");
 
                     b.Property<int>("SourceWarehouseNo")
                         .HasColumnType("int")
@@ -6726,6 +6742,55 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                         .HasDatabaseName("ix_green_grocer_product_case_profiles_active_stock_code");
 
                     b.ToTable("green_grocer_product_case_profiles", (string)null);
+                });
+
+            modelBuilder.Entity("FurpaMerkezApi.Domain.Entities.GreenGrocerShipmentLineRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id");
+
+                    b.Property<double>("ActualQuantity")
+                        .HasColumnType("float")
+                        .HasColumnName("actual_quantity");
+
+                    b.Property<Guid>("ClientRequestId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("client_request_id");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<int>("DocumentOrderNo")
+                        .HasColumnType("int")
+                        .HasColumnName("document_order_no");
+
+                    b.Property<string>("DocumentSerie")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasColumnName("document_serie");
+
+                    b.Property<Guid>("OrderLineSnapshotId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("order_line_snapshot_id");
+
+                    b.Property<Guid>("WarehouseOrderLineGuid")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("warehouse_order_line_guid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrderLineSnapshotId")
+                        .HasDatabaseName("ix_green_grocer_shipment_records_snapshot");
+
+                    b.HasIndex("ClientRequestId", "WarehouseOrderLineGuid")
+                        .IsUnique()
+                        .HasDatabaseName("ux_green_grocer_shipment_records_request_line");
+
+                    b.ToTable("green_grocer_shipment_line_records", (string)null);
                 });
 
             modelBuilder.Entity("FurpaMerkezApi.Domain.Entities.MikroApiWriteAudit", b =>
@@ -8064,6 +8129,15 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                         .WithMany()
                         .HasForeignKey("UpdatedByUserId")
                         .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("FurpaMerkezApi.Domain.Entities.GreenGrocerShipmentLineRecord", b =>
+                {
+                    b.HasOne("FurpaMerkezApi.Domain.Entities.GreenGrocerOrderLineSnapshot", null)
+                        .WithMany()
+                        .HasForeignKey("OrderLineSnapshotId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("FurpaMerkezApi.Domain.Entities.MikroApiWriteAudit", b =>

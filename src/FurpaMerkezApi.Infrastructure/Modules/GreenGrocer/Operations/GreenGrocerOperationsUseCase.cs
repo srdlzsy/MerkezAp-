@@ -12,6 +12,7 @@ using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro.Models;
 using FurpaMerkezApi.Infrastructure.Services.MikroApi;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.GreenGrocer.Operations;
@@ -23,7 +24,8 @@ public sealed class GreenGrocerOperationsUseCase(
     IOptions<MikroWriteOptions> mikroWriteOptions,
     IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
     MikroApiClient mikroApiClient,
-    MobileOfflineSyncService mobileOfflineSyncService)
+    MobileOfflineSyncService mobileOfflineSyncService,
+    ILogger<GreenGrocerOperationsUseCase> logger)
     : IGreenGrocerOperationsUseCase
 {
     private const int DefaultWarehouseNo = 56;
@@ -747,29 +749,43 @@ public sealed class GreenGrocerOperationsUseCase(
             return new Dictionary<string, GreenGrocerOperationOrderCaseInfo>(StringComparer.OrdinalIgnoreCase);
         }
 
-        var snapshots = await authDbContext.GreenGrocerOrderLineSnapshots
-            .AsNoTracking()
-            .Where(snapshot =>
-                snapshot.SourceWarehouseNo == request.WarehouseNo &&
-                snapshot.OrderDate >= request.StartDate &&
-                snapshot.OrderDate < request.EndDateExclusive &&
-                normalizedStockCodes.Contains(snapshot.StockCode))
-            .Select(snapshot => new
-            {
-                snapshot.StockCode,
-                snapshot.InputQuantity,
-                snapshot.EstimatedQuantity
-            })
-            .ToListAsync(cancellationToken);
+        try
+        {
+            var snapshots = await authDbContext.GreenGrocerOrderLineSnapshots
+                .AsNoTracking()
+                .Where(snapshot =>
+                    snapshot.SourceWarehouseNo == request.WarehouseNo &&
+                    snapshot.OrderDate >= request.StartDate &&
+                    snapshot.OrderDate < request.EndDateExclusive &&
+                    normalizedStockCodes.Contains(snapshot.StockCode))
+                .Select(snapshot => new
+                {
+                    snapshot.StockCode,
+                    snapshot.InputQuantity,
+                    snapshot.EstimatedQuantity
+                })
+                .ToListAsync(cancellationToken);
 
-        return snapshots
-            .GroupBy(snapshot => snapshot.StockCode, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(
-                group => group.Key,
-                group => new GreenGrocerOperationOrderCaseInfo(
-                    Round(group.Sum(item => item.InputQuantity)),
-                    Round(group.Sum(item => item.EstimatedQuantity))),
-                StringComparer.OrdinalIgnoreCase);
+            return snapshots
+                .GroupBy(snapshot => snapshot.StockCode, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(
+                    group => group.Key,
+                    group => new GreenGrocerOperationOrderCaseInfo(
+                        Round(group.Sum(item => item.InputQuantity)),
+                        Round(group.Sum(item => item.EstimatedQuantity))),
+                    StringComparer.OrdinalIgnoreCase);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(
+                exception,
+                "Manav operasyon gorunumu kasa snapshot bilgisi olmadan olusturulacak.");
+            return new Dictionary<string, GreenGrocerOperationOrderCaseInfo>(StringComparer.OrdinalIgnoreCase);
+        }
     }
 
     private async Task<string> GetWarehouseNameAsync(int warehouseNo, CancellationToken cancellationToken)

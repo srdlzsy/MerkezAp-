@@ -2,12 +2,14 @@ using FurpaMerkezApi.Application.Modules.SiparisIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Persistence;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.Common;
 
 public sealed class WarehouseOrderDetailQueryExecutor(
     MikroDbContext mikroDbContext,
-    AuthDbContext authDbContext)
+    AuthDbContext authDbContext,
+    ILogger<WarehouseOrderDetailQueryExecutor> logger)
 {
     private const double QuantityTolerance = 0.000001d;
 
@@ -193,48 +195,70 @@ public sealed class WarehouseOrderDetailQueryExecutor(
             return new Dictionary<Guid, WarehouseOrderLineGreenGrocerCaseDto>();
         }
 
-        var snapshots = await authDbContext.GreenGrocerOrderLineSnapshots
-            .AsNoTracking()
-            .Where(snapshot => normalizedLineGuids.Contains(snapshot.WarehouseOrderLineGuid))
-            .Select(snapshot => new
-            {
-                snapshot.WarehouseOrderLineGuid,
-                snapshot.InputQuantity,
-                snapshot.InputMode,
-                snapshot.ConversionMode,
-                snapshot.EstimatedQuantity,
-                snapshot.MicroUnit,
-                snapshot.AverageKgPerCase,
-                snapshot.UnitsPerCase,
-                snapshot.AverageSource,
-                snapshot.AverageRecordCount,
-                snapshot.AverageCaseCount,
-                snapshot.CoefficientOfVariation,
-                snapshot.Confidence,
-                snapshot.ActualShippedQuantity,
-                snapshot.ActualShippedCaseCount,
-                snapshot.Status
-            })
-            .ToListAsync(cancellationToken);
+        try
+        {
+            var snapshots = await authDbContext.GreenGrocerOrderLineSnapshots
+                .AsNoTracking()
+                .Where(snapshot => normalizedLineGuids.Contains(snapshot.WarehouseOrderLineGuid))
+                .Select(snapshot => new
+                {
+                    snapshot.WarehouseOrderLineGuid,
+                    snapshot.InputQuantity,
+                    snapshot.InputMode,
+                    snapshot.ConversionMode,
+                    snapshot.EstimatedQuantity,
+                    snapshot.MicroUnit,
+                    snapshot.AverageKgPerCase,
+                    snapshot.UnitsPerCase,
+                    snapshot.AverageSource,
+                    snapshot.AverageRecordCount,
+                    snapshot.AverageCaseCount,
+                    snapshot.CoefficientOfVariation,
+                    snapshot.Confidence,
+                    snapshot.RequiresManualApproval,
+                    snapshot.AllowOrderLinking,
+                    snapshot.OverDeliveryTolerancePercent,
+                    snapshot.SevereOverDeliveryMultiplier,
+                    snapshot.ActualShippedQuantity,
+                    snapshot.ActualShippedCaseCount,
+                    snapshot.Status
+                })
+                .ToListAsync(cancellationToken);
 
-        return snapshots.ToDictionary(
-            snapshot => snapshot.WarehouseOrderLineGuid,
-            snapshot => new WarehouseOrderLineGreenGrocerCaseDto(
-                Round(snapshot.InputQuantity),
-                snapshot.InputMode,
-                snapshot.ConversionMode,
-                Round(snapshot.EstimatedQuantity),
-                snapshot.MicroUnit,
-                RoundOrNull(snapshot.AverageKgPerCase),
-                RoundOrNull(snapshot.UnitsPerCase),
-                snapshot.AverageSource,
-                snapshot.AverageRecordCount,
-                snapshot.AverageCaseCount,
-                RoundOrNull(snapshot.CoefficientOfVariation),
-                snapshot.Confidence,
-                RoundOrNull(snapshot.ActualShippedQuantity),
-                RoundOrNull(snapshot.ActualShippedCaseCount),
-                snapshot.Status));
+            return snapshots.ToDictionary(
+                snapshot => snapshot.WarehouseOrderLineGuid,
+                snapshot => new WarehouseOrderLineGreenGrocerCaseDto(
+                    Round(snapshot.InputQuantity),
+                    snapshot.InputMode,
+                    snapshot.ConversionMode,
+                    Round(snapshot.EstimatedQuantity),
+                    snapshot.MicroUnit,
+                    RoundOrNull(snapshot.AverageKgPerCase),
+                    RoundOrNull(snapshot.UnitsPerCase),
+                    snapshot.AverageSource,
+                    snapshot.AverageRecordCount,
+                    snapshot.AverageCaseCount,
+                    RoundOrNull(snapshot.CoefficientOfVariation),
+                    snapshot.Confidence,
+                    snapshot.RequiresManualApproval,
+                    snapshot.AllowOrderLinking,
+                    Round(snapshot.OverDeliveryTolerancePercent),
+                    Round(snapshot.SevereOverDeliveryMultiplier),
+                    RoundOrNull(snapshot.ActualShippedQuantity),
+                    RoundOrNull(snapshot.ActualShippedCaseCount),
+                    snapshot.Status));
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(
+                exception,
+                "Manav siparis kasa snapshot bilgisi okunamadi; Mikro siparis detayi kasa bilgisi olmadan dondurulecek.");
+            return new Dictionary<Guid, WarehouseOrderLineGreenGrocerCaseDto>();
+        }
     }
 
     private static byte NormalizeUnitPointer(byte? unitPointer) =>

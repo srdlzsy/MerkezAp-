@@ -1,5 +1,6 @@
 using FurpaMerkezApi.Application.Common.Errors;
 using FurpaMerkezApi.Application.Modules.SevkIslemleri.DepolarArasiSevkler.Create;
+using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.Infrastructure.Modules.SevkIslemleri.DepolarArasiSevkler.Create;
 using FurpaMerkezApi.Infrastructure.OfflineSync;
 using Xunit;
@@ -30,6 +31,68 @@ public sealed class InterWarehouseShipmentRecoveryMatcherTests
             allowLinkedOrderOverDelivery: true,
             requestedQuantity: 384d,
             remainingQuantity: 380d));
+    }
+
+    [Theory]
+    [InlineData(20d, 24d, 0)]
+    [InlineData(20d, 24.001d, 1)]
+    [InlineData(20d, 29.999d, 1)]
+    [InlineData(20d, 30d, 2)]
+    [InlineData(20d, 45d, 2)]
+    public void GreenGrocerShipmentSeverity_UsesToleranceAndCriticalLimit(
+        double expectedQuantity,
+        double actualQuantity,
+        int expectedSeverity)
+    {
+        var severity = CreateInterWarehouseShipmentUseCase.EvaluateGreenGrocerShipmentSeverity(
+            expectedQuantity,
+            actualQuantity,
+            tolerancePercent: 20d,
+            severeMultiplier: 1.5d);
+
+        Assert.Equal(expectedSeverity, (int)severity);
+    }
+
+    [Fact]
+    public void GreenGrocerOrderSnapshot_TracksPartialAndCompletedShipmentTotals()
+    {
+        var userId = Guid.Parse("619ce5f5-71f8-4499-9bc8-8ed07fdd558d");
+        var snapshot = new GreenGrocerOrderLineSnapshot(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            "F56",
+            10,
+            0,
+            new DateTime(2026, 11, 25),
+            56,
+            120,
+            "015792",
+            4d,
+            "Case",
+            "LabelAverageKgPerCase",
+            5d,
+            null,
+            20d,
+            "KG",
+            "LabelHistory",
+            10,
+            40,
+            0.1d,
+            "High",
+            false,
+            false,
+            20d,
+            1.5d,
+            userId,
+            DateTime.UtcNow);
+
+        snapshot.RecordShipment(8d, 1.6d, userId, DateTime.UtcNow);
+        Assert.Equal("PartiallyShipped", snapshot.Status);
+        Assert.Equal(8d, snapshot.ActualShippedQuantity);
+        Assert.Equal(1.6d, snapshot.ActualShippedCaseCount);
+
+        snapshot.RecordShipment(20d, 4d, userId, DateTime.UtcNow);
+        Assert.Equal("Shipped", snapshot.Status);
     }
 
     [Fact]

@@ -33,6 +33,10 @@ public sealed class GreenGrocerOrderLineSnapshotConfiguration : IEntityTypeConfi
         builder.Property(snapshot => snapshot.AverageCaseCount).HasColumnName("average_case_count");
         builder.Property(snapshot => snapshot.CoefficientOfVariation).HasColumnName("coefficient_of_variation");
         builder.Property(snapshot => snapshot.Confidence).HasColumnName("confidence").HasMaxLength(30).IsRequired();
+        builder.Property(snapshot => snapshot.RequiresManualApproval).HasColumnName("requires_manual_approval").IsRequired();
+        builder.Property(snapshot => snapshot.AllowOrderLinking).HasColumnName("allow_order_linking").IsRequired();
+        builder.Property(snapshot => snapshot.OverDeliveryTolerancePercent).HasColumnName("over_delivery_tolerance_percent").IsRequired();
+        builder.Property(snapshot => snapshot.SevereOverDeliveryMultiplier).HasColumnName("severe_over_delivery_multiplier").IsRequired();
         builder.Property(snapshot => snapshot.ActualShippedQuantity).HasColumnName("actual_shipped_quantity");
         builder.Property(snapshot => snapshot.ActualShippedCaseCount).HasColumnName("actual_shipped_case_count");
         builder.Property(snapshot => snapshot.Status).HasColumnName("status").HasMaxLength(30).IsRequired();

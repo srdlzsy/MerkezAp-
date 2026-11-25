@@ -354,6 +354,7 @@ public sealed class DepolarArasiSevklerController(
     [ProducesResponseType(typeof(CreateInterWarehouseShipmentResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<ActionResult<CreateInterWarehouseShipmentResponse>> CreateOutgoing(
         [FromBody] CreateInterWarehouseShipmentHttpRequest request,
         CancellationToken cancellationToken)
@@ -380,7 +381,9 @@ public sealed class DepolarArasiSevklerController(
                         line.LotNo,
                         line.ProjectCode,
                         line.CustomerResponsibilityCenter,
-                        line.ProductResponsibilityCenter))
+                        line.ProductResponsibilityCenter,
+                        line.GreenGrocerReferenceOrderLineGuid,
+                        line.GreenGrocerOverDeliveryConfirmed))
                     .ToArray(),
                 ClientRequestId: request.ClientRequestId,
                 RequestedByUserId: User.GetRequiredUserId(),
@@ -496,6 +499,10 @@ public sealed class CreateInterWarehouseShipmentLineHttpRequest
     public double Quantity { get; init; }
 
     public Guid? WarehouseOrderLineGuid { get; init; }
+
+    public Guid? GreenGrocerReferenceOrderLineGuid { get; init; }
+
+    public bool GreenGrocerOverDeliveryConfirmed { get; init; }
 
     [Range(0, double.MaxValue)]
     public double UnitPrice { get; init; }

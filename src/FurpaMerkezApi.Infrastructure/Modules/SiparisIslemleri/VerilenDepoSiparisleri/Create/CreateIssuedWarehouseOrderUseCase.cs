@@ -32,7 +32,6 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
 {
     private const short FileId = 86;
     private const short MikroUserNo = 39;
-    private const int GreenGrocerWarehouseNo = 56;
     private const int StockCodeQueryBatchSize = 1000;
     private const int FirstDocumentOrderNo = 0;
     private const string DepolarArasiSiparisKaydetPath = "/Api/apiMethods/DepolarArasiSiparisKaydetV2";
@@ -752,7 +751,7 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
         CancellationToken cancellationToken)
     {
         if (!greenGrocerProductCaseOptions.CurrentValue.Enabled ||
-            request.OutWarehouseNo != GreenGrocerWarehouseNo ||
+            request.OutWarehouseNo != ResolveGreenGrocerSourceWarehouseNo() ||
             !request.CreatedByUserId.HasValue ||
             lines.All(line => line.GreenGrocerCase is null))
         {
@@ -809,6 +808,10 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
                         snapshot.AverageCaseCount,
                         RoundOrNull(snapshot.CoefficientOfVariation),
                         snapshot.Confidence,
+                        snapshot.RequiresManualApproval,
+                        snapshot.AllowOrderLinking,
+                        Round(snapshot.OverDeliveryTolerancePercent),
+                        Round(snapshot.SevereOverDeliveryMultiplier),
                         request.CreatedByUserId.Value,
                         createdAtUtc);
                 })
@@ -832,6 +835,12 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
                 request.InWarehouseNo,
                 request.OutWarehouseNo);
         }
+    }
+
+    private int ResolveGreenGrocerSourceWarehouseNo()
+    {
+        var configured = greenGrocerProductCaseOptions.CurrentValue.SourceWarehouseNo;
+        return configured > 0 ? configured : 56;
     }
 
     private static DEPOLAR_ARASI_SIPARISLER CreateOrderLine(
@@ -997,6 +1006,22 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
             string.IsNullOrWhiteSpace(snapshot.Confidence))
         {
             throw new ArgumentException("Green grocer snapshot fields are required.");
+        }
+
+        if (snapshot.OverDeliveryTolerancePercent is < 0d or > 1000d)
+        {
+            throw new ArgumentException("Green grocer over delivery tolerance percent must be between 0 and 1000.");
+        }
+
+        if (snapshot.SevereOverDeliveryMultiplier <= 1d)
+        {
+            throw new ArgumentException("Green grocer severe over delivery multiplier must be greater than 1.");
+        }
+
+        if (snapshot.OverDeliveryTolerancePercent >=
+            (snapshot.SevereOverDeliveryMultiplier - 1d) * 100d)
+        {
+            throw new ArgumentException("Green grocer tolerance must stay below the critical delivery limit.");
         }
     }
 

@@ -73,6 +73,9 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options) : DbC
     public DbSet<GreenGrocerOrderLineSnapshot> GreenGrocerOrderLineSnapshots =>
         Set<GreenGrocerOrderLineSnapshot>();
 
+    public DbSet<GreenGrocerShipmentLineRecord> GreenGrocerShipmentLineRecords =>
+        Set<GreenGrocerShipmentLineRecord>();
+
     public DbSet<AxataSynchronizationDocumentState> AxataSynchronizationDocumentStates =>
         Set<AxataSynchronizationDocumentState>();
 

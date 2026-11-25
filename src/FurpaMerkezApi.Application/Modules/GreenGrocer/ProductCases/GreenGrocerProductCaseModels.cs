@@ -106,6 +106,16 @@ public sealed record GreenGrocerProductCaseResolutionDto(
     string Confidence,
     bool RequiresManualApproval,
     bool IsOrderLinkable,
+    double OverDeliveryTolerancePercent,
+    double SevereOverDeliveryMultiplier,
     bool IsUsable,
     IReadOnlyCollection<string> Warnings,
     IReadOnlyCollection<string> Errors);
+
+public sealed record GreenGrocerProductCaseCapabilitiesDto(
+    bool Enabled,
+    bool OrderLinkingEnabled,
+    int SourceWarehouseNo,
+    IReadOnlyCollection<string> ModelCodes,
+    double DefaultOverDeliveryTolerancePercent,
+    double SevereOverDeliveryMultiplier);

@@ -39,7 +39,10 @@ Ana config bolumu:
 {
   "GreenGrocerProductCases": {
     "Enabled": true,
-    "OrderLinkingEnabled": false
+    "OrderLinkingEnabled": false,
+    "SourceWarehouseNo": 56,
+    "DefaultOverDeliveryTolerancePercent": 20,
+    "SevereOverDeliveryMultiplier": 1.5
   }
 }
 ```
@@ -49,6 +52,9 @@ Ortam degiskeni karsiliklari:
 ```text
 GreenGrocerProductCases__Enabled=true|false
 GreenGrocerProductCases__OrderLinkingEnabled=true|false
+GreenGrocerProductCases__SourceWarehouseNo=56
+GreenGrocerProductCases__DefaultOverDeliveryTolerancePercent=20
+GreenGrocerProductCases__SevereOverDeliveryMultiplier=1.5
 ```
 
 ### Enabled
@@ -76,7 +82,7 @@ baglanip baglanmayacagini kontrol eder.
 `OrderLinkingEnabled=false`:
 
 - Varsayilan ve guvenli moddur.
-- 56 kaynak depo ve model kodu `10`, `11`, `12` olan manav urunlerinde
+- Ayarlanan kaynak depo ve model kodu `10`, `11`, `12`, `23` olan manav urunlerinde
   `warehouseOrderLineGuid` gelse bile backend bu GUID'i temizler.
 - Sevk siparis satirina baglanmaz.
 - Kalan siparis miktari kontrolu uygulanmaz.
@@ -117,6 +123,7 @@ Endpointler:
 
 ```text
 GET    /api/green-grocer/product-case-profiles
+GET    /api/green-grocer/product-case-profiles/capabilities
 GET    /api/green-grocer/product-case-profiles/{stockCode}
 PUT    /api/green-grocer/product-case-profiles/{stockCode}
 DELETE /api/green-grocer/product-case-profiles/{stockCode}
@@ -135,12 +142,24 @@ green-grocer.product-case-profiles.delete
 
 ## Yeni Tablolar
 
-Uygulama/Auth DB tarafina iki tablo eklendi:
+Uygulama/Auth DB tarafinda uc tablo kullanilir:
 
 ```text
 green_grocer_product_case_profiles
 green_grocer_order_line_snapshots
+green_grocer_shipment_line_records
 ```
+
+Bu tablolarin zorunluluk seviyesi ayni degildir:
+
+- `green_grocer_product_case_profiles`, urune ozel kasa/koli kurali yonetilecekse
+  kullanilir. Profil yoksa API stok kartina gore guvenli otomatik karar verir.
+- `green_grocer_order_line_snapshots` ve `green_grocer_shipment_line_records`
+  destek/denetim tablolaridir. Bu tablolar yoksa veya gecici olarak okunamazsa
+  Mikro siparis ve sevk islemi durmaz; klasik Mikro akisi devam eder.
+- Destek tablolari kullanilamadiginda siparis anindaki kasa bilgisi, kumulatif
+  sevk toplami ve gelismis tolerans denetimi bulunmaz. Bu nedenle migration'lar
+  ana evrak akisi icin zorunlu degil, gelismis izleme ve guvenlik icin onerilir.
 
 ### green_grocer_product_case_profiles
 
@@ -166,6 +185,16 @@ UI `resolution-preview` cevabini depo siparisi create satirindaki
 satir GUID'i ile snapshot yazar. Boylece sonradan ortalama degisse bile manav
 depo gelen sipariste ve GreenGrocer raporlarinda "3 kasa ~= 11.25 KG" bilgisi
 aynen gorulebilir.
+
+### green_grocer_shipment_line_records
+
+Basarili manav sevklerinde siparis satiri, `clientRequestId`, Mikro sevk seri/sira
+ve fiili miktari kaydeder. `(clientRequestId, warehouseOrderLineGuid)` benzersizdir;
+ayni mobil istek tekrarlandiginda miktar ikinci kez sayilmaz.
+
+Snapshot'taki `actualShippedQuantity`, bu kayitlarin toplami olarak guncellenir.
+Bu nedenle ikinci veya ucuncu kismi sevkte tolerans kontrolu yalniz yeni fisi
+degil, onceki sevkler + yeni sevk toplam miktarini kullanir.
 
 ## Profil Alanlari
 
@@ -251,9 +280,15 @@ olmalidir.
 
 ### overDeliveryTolerancePercent
 
-Ileride siparis-sevk toleransini yonetmek icin profil uzerinde tutulur.
-Mevcut sevk validasyonu simdilik Mikro siparis satirindaki kalan miktar
-kontrolunu kullanir.
+Sipariste hesaplanan tahmini KG/ADET ile sevkte okutulan fiili miktar arasindaki
+normal sapma yuzdesidir. Deger siparis snapshot'ina yazilir ve sonradan profil
+degisse bile o siparis icin sabit kalir.
+
+Varsayilan `20` ve kritik katsayi `1.5` ise, tahmini miktari `20 KG` olan satirda:
+
+- `24 KG` dahil normaldir.
+- `24 KG` ustu ve `30 KG` alti kullanici onayi ister.
+- `30 KG` ve ustu kritik kabul edilir; API sevki engeller.
 
 ## Resolution Preview Nasil Calisir?
 
@@ -274,14 +309,17 @@ Request:
 Backend su islemleri yapar:
 
 1. `Enabled=true` mi kontrol eder.
-2. Kaynak depo `56` mi kontrol eder.
+2. Kaynak depo `GreenGrocerProductCases:SourceWarehouseNo` ile ayni mi kontrol eder.
 3. Mikro `STOKLAR` tablosundan stok kartini okur.
 4. Stok model kodu `10`, `11`, `12`, `23` icinde mi kontrol eder.
 5. Aktif profil varsa profil kuralini kullanir.
 6. Profil yoksa otomatik karar verir:
    - Model `23`: sarf/kasa malzemesi gibi davranir.
-   - Ana birim `ADET` ve birim2 katsayisi varsa koli/adet cevrimi yapar.
-   - Ana birim `ADET` ama katsayi yoksa direkt adet kabul eder.
+   - Ana birim `ADET` ise Mikro birim2/koli katsayisindan bagimsiz olarak
+     kullanicinin girdigi miktari direkt ADET kabul eder. Ornek: `5 -> 5 ADET`.
+   - ADET urunun gercekten koli olarak girilmesi gerekiyorsa urune ozel aktif
+     `Pack + FixedUnitsPerCase` profili tanimlanir. Ancak bu durumda
+     `5 koli * 25 = 125 ADET` cevrimi yapilir.
    - Ana birim `KG` ise Furpa etiket gecmisinden kg/kasa ortalamasi hesaplar.
 7. Sonucta UI'ye `estimatedQuantity`, `confidence`, `warnings`, `errors`,
    `isUsable`, `isOrderLinkable` alanlarini dondurur.
@@ -305,6 +343,8 @@ Ornek response:
   "confidence": "High",
   "requiresManualApproval": false,
   "isOrderLinkable": true,
+  "overDeliveryTolerancePercent": 20,
+  "severeOverDeliveryMultiplier": 1.5,
   "isUsable": true,
   "warnings": [],
   "errors": []
@@ -384,7 +424,11 @@ Manav siparisi create satiri ornegi:
     "averageRecordCount": 47,
     "averageCaseCount": 7526,
     "coefficientOfVariation": 0.08,
-    "confidence": "High"
+    "confidence": "High",
+    "requiresManualApproval": false,
+    "allowOrderLinking": false,
+    "overDeliveryTolerancePercent": 20,
+    "severeOverDeliveryMultiplier": 1.5
   }
 }
 ```
@@ -404,12 +448,15 @@ Bu eski mantiktir.
 1. UI sevk satiri gonderir.
 2. Satirda `warehouseOrderLineGuid` olsa bile backend 56 depo + model `10/11/12`
    icin bu GUID'i temizler.
-3. Sevk siparise baglanmaz.
-4. Kalan siparis miktari kontrolu yoktur.
-5. Teslim miktari guncellenmez.
-6. UI manav sevkte siparis secme, kalan siparis kapatma ve
-   `warehouseOrderLineGuid` tasima akisini gostermemelidir. Gelen siparis detayi
-   ve rapordaki `greenGrocerCase` bilgisi sadece bilgilendirme icindir.
+3. Sevk Mikro siparis teslim miktarini/kapatma alanini guncellemez.
+4. UI, `greenGrocerReferenceOrderLineGuid` ile siparis snapshot referansini
+   korur. Bu alan Mikro siparis bagi degildir; yalniz tolerans ve denetim icindir.
+5. API kaynak/hedef depo, stok, tahmini miktar, tolerans ve kritik siniri tekrar
+   kontrol eder. Terminal kontrolu atlatilsa bile kritik sevk yazilmaz.
+6. Eski terminal yalniz `warehouseOrderLineGuid` gonderirse API, snapshot'i
+   kendisi bulup denetim referansini tamamlar.
+7. Basarili sevk idempotent kaydedilir; sonraki kismi sevklerde onceki fiili
+   miktar da tolerans hesabina katilir.
 
 ### OrderLinkingEnabled=true
 
@@ -463,6 +510,12 @@ ayri bir karar ve ayri test ister.
 - Siparis create satirinda `greenGrocerCase` gonderilirse gelen siparis detayi ve
   GreenGrocer raporlari ayni kasa/ortalama bilgisini geri dondurur.
 - `OrderLinkingEnabled=false` ise manav sevkte `warehouseOrderLineGuid` gonderme.
+- Manav sevkte baglama durumundan bagimsiz olarak siparis satiri GUID'ini
+  `greenGrocerReferenceOrderLineGuid` alaninda gonder.
+- Tolerans asildiysa terminal acik onay alip
+  `greenGrocerOverDeliveryConfirmed=true` gonderir.
+- Kritik sinir asildiginda terminal kaydi durdurur; API de ayni kurali tekrarlar.
+- Terminal onceki sevk, bu sevk ve toplam fiili miktari ayri gosterir.
 - `OrderLinkingEnabled=true` ve `isOrderLinkable=true` ise sevkte ilgili
   siparis satirinin `lineGuid` degerini `warehouseOrderLineGuid` olarak gonder.
 
@@ -471,6 +524,17 @@ ayri bir karar ve ayri test ister.
 - Kasa profil/cozumleme modulu kapaliysa endpointler 409 doner.
 - `OrderLinkingEnabled=false` iken 56 depo manav urunlerinde siparis GUID'i
   temizlenir.
+- `greenGrocerReferenceOrderLineGuid`, Mikro bagi kapali olsa da silinmez ve
+  snapshot tabanli sevk kontrolunde kullanilir.
+- Snapshot destek tablosu yoksa veya okunamazsa bu gelismis referans temizlenir;
+  sevk klasik Mikro kurallariyla devam eder. Mikro evraki destek tablosu
+  yuzunden engellenmez.
+- Eski terminalin gonderdigi `warehouseOrderLineGuid`, uygun snapshot varsa
+  backend tarafinda denetim referansina otomatik tamamlanir.
+- Tolerans ve kritik sinir, `actualShippedQuantity + bu sevk miktari` uzerinden
+  hesaplanir; sevki parcalara bolmek siniri atlatmaz.
+- Basarili sevkler `green_grocer_shipment_line_records` tablosuna idempotent
+  yazilir ve snapshot fiili toplami buradan guncellenir.
 - `OrderLinkingEnabled=true` iken GUID korunur ama sadece UI gonderirse kullanilir.
 - 56 depo icin otomatik depo siparisi uretimi kapali kalir.
 - `outWarehouseNo=56` olan depo siparislerinde satir `greenGrocerCase` bilgisi
@@ -494,6 +558,7 @@ Domain:
 ```text
 src/FurpaMerkezApi.Domain/Entities/GreenGrocerProductCaseProfile.cs
 src/FurpaMerkezApi.Domain/Entities/GreenGrocerOrderLineSnapshot.cs
+src/FurpaMerkezApi.Domain/Entities/GreenGrocerShipmentLineRecord.cs
 ```
 
 Infrastructure:
@@ -507,7 +572,10 @@ src/FurpaMerkezApi.Infrastructure/Modules/SevkIslemleri/DepolarArasiSevkler/Crea
 src/FurpaMerkezApi.Infrastructure/Modules/SevkIslemleri/DepolarArasiSevkler/Create/CreateInterWarehouseShipmentUseCase.cs
 src/FurpaMerkezApi.Infrastructure/Persistence/Configurations/GreenGrocerProductCaseProfileConfiguration.cs
 src/FurpaMerkezApi.Infrastructure/Persistence/Configurations/GreenGrocerOrderLineSnapshotConfiguration.cs
+src/FurpaMerkezApi.Infrastructure/Persistence/Configurations/GreenGrocerShipmentLineRecordConfiguration.cs
 src/FurpaMerkezApi.Infrastructure/Migrations/20260731061750_AddGreenGrocerProductCaseProfiles.cs
+src/FurpaMerkezApi.Infrastructure/Migrations/20261124120905_HardenGreenGrocerShipmentControls.cs
+src/FurpaMerkezApi.Infrastructure/Migrations/20261125060345_TrackGreenGrocerShipmentTotals.cs
 ```
 
 WebApi:
@@ -521,6 +589,7 @@ Tests:
 
 ```text
 tests/FurpaMerkezApi.Infrastructure.Tests/Modules/SevkIslemleri/DepolarArasiSevkler/GreenGrocerShipmentLineNormalizerTests.cs
+tests/FurpaMerkezApi.Infrastructure.Tests/Modules/GreenGrocer/ProductCases/GreenGrocerProductCaseServiceTests.cs
 ```
 
 Docs:
@@ -535,12 +604,12 @@ docs/MANAV_KASA_SIPARIS_SEVK_AKISI.md
 1. Ortalama yoksa otomatik KG hesaplamak dogru degildir.
    Bu durumda profil manuel tanimlanmali veya UI satir ekletmemelidir.
 
-2. `OrderLinkingEnabled=true` acilirsa sevk miktari kalan siparis miktarindan
-   fazla olamaz. Bu eski serbest sevk davranisindan farklidir.
+2. `OrderLinkingEnabled=true` acilirsa standart Mikro kalan siparis kontrolu de
+   ek olarak calisir.
 
 3. Siparis miktari ortalama KG ile olusturulup sevk gercek KG ile yapildigi icin
-   tolerans ihtiyaci dogabilir. Profilde `overDeliveryTolerancePercent` alanlari
-   bunun icin hazir durur.
+   tolerans kontrolu aktif olarak uygulanir. Uyari kullanici onayi ister, kritik
+   fark her durumda engellenir.
 
 4. Snapshot yazimi Mikro siparisi olustuktan sonra Auth DB'ye yazilir. Mikro
    siparis basarili olup snapshot yazimi teknik bir sebeple basarisiz kalirsa

@@ -20,7 +20,7 @@ public sealed class GreenGrocerProductCaseService(
     IOptionsMonitor<GreenGrocerProductCaseOptions> options)
     : IGreenGrocerProductCaseService
 {
-    private const int GreenGrocerWarehouseNo = 56;
+    private const int DefaultGreenGrocerWarehouseNo = 56;
     private const int DefaultTake = 100;
     private const int MaxTake = 500;
     private const int DefaultAverageWindowDays = 30;
@@ -123,9 +123,15 @@ public sealed class GreenGrocerProductCaseService(
             ConversionMode = conversionMode
         };
         ValidateProfileRequest(normalizedRequest);
+        var severeMultiplier = ResolveSevereOverDeliveryMultiplier();
+        if (normalizedRequest.OverDeliveryTolerancePercent >= (severeMultiplier - 1d) * 100d)
+        {
+            throw new ArgumentException(
+                "Over delivery tolerance must stay below the configured critical delivery limit.");
+        }
 
         var stockInfo = await GetStockInfoAsync(normalizedStockCode, cancellationToken);
-        EnsureGreenGrocerStock(stockInfo);
+        EnsureGreenGrocerStock(stockInfo, normalizedRequest.IsActive);
 
         var profile = await authDbContext.GreenGrocerProductCaseProfiles
             .FirstOrDefaultAsync(item => item.StockCode == normalizedStockCode, cancellationToken);
@@ -211,9 +217,11 @@ public sealed class GreenGrocerProductCaseService(
             throw new ArgumentException("Input quantity must be greater than zero.", nameof(request.InputQuantity));
         }
 
-        if (request.SourceWarehouseNo != GreenGrocerWarehouseNo)
+        var sourceWarehouseNo = ResolveSourceWarehouseNo();
+        if (request.SourceWarehouseNo != sourceWarehouseNo)
         {
-            throw new ArgumentException("Green grocer case resolution can only be used for source warehouse 56.");
+            throw new ArgumentException(
+                $"Green grocer case resolution can only be used for source warehouse {sourceWarehouseNo}.");
         }
 
         var stockCode = NormalizeStockCode(request.StockCode);
@@ -229,6 +237,16 @@ public sealed class GreenGrocerProductCaseService(
         if (!IsGreenGrocerModel(stockInfo.ModelCode))
         {
             errors.Add("Urun 56 MANAV DEPO model kodlari icinde degil.");
+        }
+
+        if (stockInfo.IsPassive)
+        {
+            errors.Add("Pasif urun icin manav kasa profili kullanilamaz.");
+        }
+
+        if (stockInfo.IsDelisted)
+        {
+            errors.Add("DLS urun manav kasa siparisine eklenemez.");
         }
 
         var result = profile is not null
@@ -266,7 +284,7 @@ public sealed class GreenGrocerProductCaseService(
             ? await GetLabelAverageAsync(stockInfo.StockCode, orderDate, profile.AverageWindowDays, cancellationToken)
             : LabelAverage.Empty;
 
-        return conversionMode switch
+        var result = conversionMode switch
         {
             GreenGrocerProductCaseModes.ConversionLabelAverageKgPerCase =>
                 ResolveLabelAverage(
@@ -319,6 +337,12 @@ public sealed class GreenGrocerProductCaseService(
 
             _ => throw new ArgumentException($"Unsupported conversion mode: {profile.ConversionMode}")
         };
+
+        return result with
+        {
+            OverDeliveryTolerancePercent = Round(profile.OverDeliveryTolerancePercent),
+            SevereOverDeliveryMultiplier = ResolveSevereOverDeliveryMultiplier()
+        };
     }
 
     private async Task<GreenGrocerProductCaseResolutionDto> ResolveAutomaticallyAsync(
@@ -355,30 +379,13 @@ public sealed class GreenGrocerProductCaseService(
         if (IsUnit(stockInfo.Unit1, "ADET"))
         {
             var unitFactor = GetSecondaryUnitMultiplier(stockInfo);
-
             if (unitFactor > 1)
             {
-                return CreateResolution(
-                    stockInfo,
-                    inputQuantity,
-                    GreenGrocerProductCaseModes.InputPack,
-                    GreenGrocerProductCaseModes.ConversionFixedUnitsPerCase,
-                    "ADET",
-                    inputQuantity * unitFactor,
-                    null,
-                    unitFactor,
-                    GreenGrocerProductCaseModes.AverageSourceStockUnitFactor,
-                    null,
-                    null,
-                    null,
-                    null,
-                    GreenGrocerProductCaseModes.ConfidenceHigh,
-                    false,
-                    true,
-                    true);
+                warnings.Add(
+                    "ADET urunun Mikro koli katsayisi otomatik uygulanmadi; girilen miktar ADET kabul edildi. " +
+                    "Koli girisi gerekiyorsa urune ozel profil tanimlayin.");
             }
 
-            warnings.Add("ADET urunde koli katsayisi yok; miktar dogrudan ADET kabul edildi.");
             return CreateResolution(
                 stockInfo,
                 inputQuantity,
@@ -393,7 +400,7 @@ public sealed class GreenGrocerProductCaseService(
                 null,
                 null,
                 null,
-                GreenGrocerProductCaseModes.ConfidenceMedium,
+                GreenGrocerProductCaseModes.ConfidenceHigh,
                 false,
                 true,
                 true);
@@ -719,6 +726,8 @@ public sealed class GreenGrocerProductCaseService(
             confidence,
             requiresManualApproval,
             isOrderLinkable && options.CurrentValue.OrderLinkingEnabled,
+            ResolveDefaultOverDeliveryTolerancePercent(),
+            ResolveSevereOverDeliveryMultiplier(),
             isUsable,
             [],
             []);
@@ -735,7 +744,10 @@ public sealed class GreenGrocerProductCaseService(
                 (item.sto_model_kodu ?? string.Empty).Trim(),
                 (item.sto_birim1_ad ?? string.Empty).Trim(),
                 (item.sto_birim2_ad ?? string.Empty).Trim(),
-                item.sto_birim2_katsayi ?? 0d))
+                item.sto_birim2_katsayi ?? 0d,
+                item.sto_pasif_fl == true,
+                (item.sto_kisa_ismi ?? string.Empty).StartsWith("DLS") ||
+                (item.sto_isim ?? string.Empty).StartsWith("DLS")))
             .FirstOrDefaultAsync(cancellationToken);
 
         return stock ?? throw new KeyNotFoundException($"Stock card was not found: {normalized}");
@@ -765,7 +777,10 @@ public sealed class GreenGrocerProductCaseService(
                 (item.sto_model_kodu ?? string.Empty).Trim(),
                 (item.sto_birim1_ad ?? string.Empty).Trim(),
                 (item.sto_birim2_ad ?? string.Empty).Trim(),
-                item.sto_birim2_katsayi ?? 0d))
+                item.sto_birim2_katsayi ?? 0d,
+                item.sto_pasif_fl == true,
+                (item.sto_kisa_ismi ?? string.Empty).StartsWith("DLS") ||
+                (item.sto_isim ?? string.Empty).StartsWith("DLS")))
             .ToListAsync(cancellationToken);
 
         return stocks.ToDictionary(item => item.StockCode, StringComparer.OrdinalIgnoreCase);
@@ -876,7 +891,9 @@ public sealed class GreenGrocerProductCaseService(
             string.Empty,
             string.Empty,
             string.Empty,
-            0d);
+            0d,
+            false,
+            false);
 
         return new GreenGrocerProductCaseProfileDto(
             profile.Id,
@@ -906,12 +923,38 @@ public sealed class GreenGrocerProductCaseService(
             profile.UpdatedAtUtc);
     }
 
-    private static void EnsureGreenGrocerStock(StockInfo stockInfo)
+    private static void EnsureGreenGrocerStock(StockInfo stockInfo, bool activatingProfile)
     {
         if (!IsGreenGrocerModel(stockInfo.ModelCode))
         {
             throw new ArgumentException("Product case profile can only be saved for model codes 10, 11, 12 or 23.");
         }
+
+        if (activatingProfile &&
+            (stockInfo.IsPassive || stockInfo.IsDelisted))
+        {
+            throw new ArgumentException("Passive or DLS products can not have an active green grocer case profile.");
+        }
+    }
+
+    private double ResolveDefaultOverDeliveryTolerancePercent()
+    {
+        var configured = options.CurrentValue.DefaultOverDeliveryTolerancePercent;
+        return configured is >= 0d and <= 1000d
+            ? Round(configured)
+            : DefaultOverDeliveryTolerancePercent;
+    }
+
+    private int ResolveSourceWarehouseNo()
+    {
+        var configured = options.CurrentValue.SourceWarehouseNo;
+        return configured > 0 ? configured : DefaultGreenGrocerWarehouseNo;
+    }
+
+    private double ResolveSevereOverDeliveryMultiplier()
+    {
+        var configured = options.CurrentValue.SevereOverDeliveryMultiplier;
+        return configured > 1d ? Round(configured) : 1.5d;
     }
 
     private static string GetCanonicalMode(string mode, IReadOnlyCollection<string> validModes)
@@ -1023,7 +1066,9 @@ public sealed class GreenGrocerProductCaseService(
         string ModelCode,
         string Unit1,
         string Unit2,
-        double Unit2Factor);
+        double Unit2Factor,
+        bool IsPassive,
+        bool IsDelisted);
 
     private sealed record LabelAverage(
         int RecordCount,

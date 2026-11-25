@@ -37,4 +37,8 @@ public sealed record GreenGrocerOrderLineSnapshotRequest(
     int? AverageRecordCount,
     int? AverageCaseCount,
     double? CoefficientOfVariation,
-    string Confidence);
+    string Confidence,
+    bool RequiresManualApproval = false,
+    bool AllowOrderLinking = false,
+    double OverDeliveryTolerancePercent = 20d,
+    double SevereOverDeliveryMultiplier = 1.5d);

@@ -3,12 +3,14 @@ using FurpaMerkezApi.Application.Modules.GreenGrocer.Reports;
 using FurpaMerkezApi.Infrastructure.Persistence;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.GreenGrocer.Reports;
 
 public sealed class GreenGrocerReportsUseCase(
     MikroDbContext mikroDbContext,
-    AuthDbContext authDbContext)
+    AuthDbContext authDbContext,
+    ILogger<GreenGrocerReportsUseCase> logger)
     : IGreenGrocerReportsUseCase
 {
     private const string GreensTypeCode = "12";
@@ -568,40 +570,54 @@ public sealed class GreenGrocerReportsUseCase(
             return new Dictionary<Guid, GreenGrocerReportCaseInfoDto>();
         }
 
-        var snapshots = await authDbContext.GreenGrocerOrderLineSnapshots
-            .AsNoTracking()
-            .Where(snapshot => normalizedLineGuids.Contains(snapshot.WarehouseOrderLineGuid))
-            .Select(snapshot => new
-            {
-                snapshot.WarehouseOrderLineGuid,
-                snapshot.InputQuantity,
-                snapshot.InputMode,
-                snapshot.EstimatedQuantity,
-                snapshot.MicroUnit,
-                snapshot.AverageKgPerCase,
-                snapshot.UnitsPerCase,
-                snapshot.AverageSource,
-                snapshot.Confidence,
-                snapshot.AverageRecordCount,
-                snapshot.AverageCaseCount,
-                snapshot.CoefficientOfVariation
-            })
-            .ToListAsync(cancellationToken);
+        try
+        {
+            var snapshots = await authDbContext.GreenGrocerOrderLineSnapshots
+                .AsNoTracking()
+                .Where(snapshot => normalizedLineGuids.Contains(snapshot.WarehouseOrderLineGuid))
+                .Select(snapshot => new
+                {
+                    snapshot.WarehouseOrderLineGuid,
+                    snapshot.InputQuantity,
+                    snapshot.InputMode,
+                    snapshot.EstimatedQuantity,
+                    snapshot.MicroUnit,
+                    snapshot.AverageKgPerCase,
+                    snapshot.UnitsPerCase,
+                    snapshot.AverageSource,
+                    snapshot.Confidence,
+                    snapshot.AverageRecordCount,
+                    snapshot.AverageCaseCount,
+                    snapshot.CoefficientOfVariation
+                })
+                .ToListAsync(cancellationToken);
 
-        return snapshots.ToDictionary(
-            snapshot => snapshot.WarehouseOrderLineGuid,
-            snapshot => new GreenGrocerReportCaseInfoDto(
-                Round(snapshot.InputQuantity),
-                snapshot.InputMode,
-                Round(snapshot.EstimatedQuantity),
-                snapshot.MicroUnit,
-                RoundOrNull(snapshot.AverageKgPerCase),
-                RoundOrNull(snapshot.UnitsPerCase),
-                snapshot.AverageSource,
-                snapshot.Confidence,
-                snapshot.AverageRecordCount,
-                snapshot.AverageCaseCount,
-                RoundOrNull(snapshot.CoefficientOfVariation)));
+            return snapshots.ToDictionary(
+                snapshot => snapshot.WarehouseOrderLineGuid,
+                snapshot => new GreenGrocerReportCaseInfoDto(
+                    Round(snapshot.InputQuantity),
+                    snapshot.InputMode,
+                    Round(snapshot.EstimatedQuantity),
+                    snapshot.MicroUnit,
+                    RoundOrNull(snapshot.AverageKgPerCase),
+                    RoundOrNull(snapshot.UnitsPerCase),
+                    snapshot.AverageSource,
+                    snapshot.Confidence,
+                    snapshot.AverageRecordCount,
+                    snapshot.AverageCaseCount,
+                    RoundOrNull(snapshot.CoefficientOfVariation)));
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(
+                exception,
+                "Manav raporu kasa snapshot bilgisi olmadan olusturulacak.");
+            return new Dictionary<Guid, GreenGrocerReportCaseInfoDto>();
+        }
     }
 
     private static GreenGrocerReportCaseInfoDto? AggregateCaseInfo(

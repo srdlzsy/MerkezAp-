@@ -22,12 +22,13 @@ public sealed class GreenGrocerProductCasesPermissionTests
     }
 
     [Theory]
+    [InlineData(nameof(GreenGrocerProductCasesController.Capabilities), null)]
     [InlineData(nameof(GreenGrocerProductCasesController.List), "green-grocer.product-case-profiles.list")]
     [InlineData(nameof(GreenGrocerProductCasesController.Detail), "green-grocer.product-case-profiles.detail")]
     [InlineData(nameof(GreenGrocerProductCasesController.Save), "green-grocer.product-case-profiles.update")]
     [InlineData(nameof(GreenGrocerProductCasesController.Delete), "green-grocer.product-case-profiles.delete")]
-    [InlineData(nameof(GreenGrocerProductCasesController.ResolutionPreview), "green-grocer.product-case-profiles.list")]
-    public void ControllerActions_KeepApiActionPolicies(string methodName, string expectedPolicy)
+    [InlineData(nameof(GreenGrocerProductCasesController.ResolutionPreview), "siparis-islemleri.verilen-depo-siparisleri.create")]
+    public void ControllerActions_KeepApiActionPolicies(string methodName, string? expectedPolicy)
     {
         var authorizeAttribute = typeof(GreenGrocerProductCasesController)
             .GetMethods()

@@ -1,9 +1,11 @@
 using System.ComponentModel.DataAnnotations;
 using FurpaMerkezApi.Application.Modules.GreenGrocer.ProductCases;
+using FurpaMerkezApi.Infrastructure.Modules.GreenGrocer.ProductCases;
 using FurpaMerkezApi.WebApi.Controllers.Modules.Common;
 using FurpaMerkezApi.WebApi.Extensions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace FurpaMerkezApi.WebApi.Controllers.Modules.GreenGrocer.ProductCases;
 
@@ -12,7 +14,8 @@ namespace FurpaMerkezApi.WebApi.Controllers.Modules.GreenGrocer.ProductCases;
 [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
 [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
 public sealed class GreenGrocerProductCasesController(
-    IGreenGrocerProductCaseService productCaseService)
+    IGreenGrocerProductCaseService productCaseService,
+    IOptionsMonitor<GreenGrocerProductCaseOptions> productCaseOptions)
     : ModuleMenuControllerBase(ModuleCode, ModuleName, MenuCode, MenuName)
 {
     private const string ModuleCode = "green-grocer";
@@ -23,6 +26,27 @@ public sealed class GreenGrocerProductCasesController(
     private const string DetailPolicy = "green-grocer.product-case-profiles.detail";
     private const string UpdatePolicy = "green-grocer.product-case-profiles.update";
     private const string DeletePolicy = "green-grocer.product-case-profiles.delete";
+    private const string CreateWarehouseOrderPolicy = "siparis-islemleri.verilen-depo-siparisleri.create";
+
+    [HttpGet("capabilities")]
+    [HttpGet("yetenekler")]
+    [Authorize]
+    [ProducesResponseType(typeof(GreenGrocerProductCaseCapabilitiesDto), StatusCodes.Status200OK)]
+    public ActionResult<GreenGrocerProductCaseCapabilitiesDto> Capabilities()
+    {
+        var options = productCaseOptions.CurrentValue;
+        return Ok(new GreenGrocerProductCaseCapabilitiesDto(
+            options.Enabled,
+            options.Enabled && options.OrderLinkingEnabled,
+            options.SourceWarehouseNo > 0 ? options.SourceWarehouseNo : 56,
+            ["10", "11", "12", "23"],
+            options.DefaultOverDeliveryTolerancePercent is >= 0d and <= 1000d
+                ? options.DefaultOverDeliveryTolerancePercent
+                : 20d,
+            options.SevereOverDeliveryMultiplier > 1d
+                ? options.SevereOverDeliveryMultiplier
+                : 1.5d));
+    }
 
     [HttpGet]
     [Authorize(Policy = ListPolicy)]
@@ -80,7 +104,7 @@ public sealed class GreenGrocerProductCasesController(
 
     [HttpPost("resolution-preview")]
     [HttpPost("cozumleme-onizleme")]
-    [Authorize(Policy = ListPolicy)]
+    [Authorize(Policy = CreateWarehouseOrderPolicy)]
     [ProducesResponseType(typeof(GreenGrocerProductCaseResolutionDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
