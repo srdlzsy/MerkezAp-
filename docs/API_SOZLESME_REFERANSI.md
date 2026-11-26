@@ -7,7 +7,7 @@ Kapsam: kayitli HTTP method/route ve alias'lar, binding kaynagi, request alanlar
 
 `bildirilmemis` response tipi, runtime cevabinin bos oldugu anlamina gelmez. Anonim endpointler konfigurasyon/ag/servis kontrollerine tabi olabilir. JWT fallback policy, acik Authorize olmasa da uygulanir.
 
-Endpoint sayisi (method + route): 864. Model sayisi: 848.
+Endpoint sayisi (method + route): 868. Model sayisi: 853.
 
 Bunlara ek olarak EndpointDataSource uzerinden dogrulanan iki health route'u vardir: `/health/live`, `/health/ready`. Bu middleware route'larinda method kisiti yoktur; istemci GET kullanmalidir. Anonimdir, JSON dondurur; Healthy/Degraded=200, Unhealthy=503. `live` yalniz prosesi, `ready` core_dependencies, operations_export_path ve background_workers kontrollerini olcer. Alanlar: status (string), durationMilliseconds (number), checks (ad -> status/durationMilliseconds/description/data). Tum runtime route'lari envanterde yer alir; yeni ve ApiExplorer disinda kalan route eklenirse test basarisiz olur.
 
@@ -40,9 +40,13 @@ Ozel response'lar: `/` Hosting:ExposeDiagnosticsOnRoot=false iken yalniz service
 | POST | `/api/ayar-islemleri/b2b-ayarlari/bultenler` | JWT + ayar-islemleri.b2b-ayarlari.create | body: request / SaveB2BBulletinHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>201: B2BBulletinDto<br>400: ProblemDetails |
 | DELETE | `/api/ayar-islemleri/b2b-ayarlari/bultenler/{id}` | JWT + ayar-islemleri.b2b-ayarlari.delete | path: id / integer (int32) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>204: bildirilmemis<br>400: ProblemDetails<br>404: ProblemDetails |
 | PUT | `/api/ayar-islemleri/b2b-ayarlari/bultenler/{id}` | JWT + ayar-islemleri.b2b-ayarlari.update | path: id / integer (int32) (zorunlu)<br>body: request / SaveB2BBulletinHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: B2BBulletinDto<br>400: ProblemDetails<br>404: ProblemDetails |
+| GET | `/api/ayar-islemleri/b2b-ayarlari/cariler` | JWT + ayar-islemleri.b2b-ayarlari.list | query: Search / string<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;B2BAccountLookupDto&gt; |
 | GET | `/api/ayar-islemleri/b2b-ayarlari/kullanicilar` | JWT + ayar-islemleri.b2b-ayarlari.list | query: Search / string<br>query: IncludeInactive / boolean<br>query: Take / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;B2BUserDto&gt; |
+| POST | `/api/ayar-islemleri/b2b-ayarlari/kullanicilar` | JWT + ayar-islemleri.b2b-ayarlari.create | body: request / CreateB2BUserHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>201: B2BUserDetailDto<br>400: ProblemDetails<br>409: ProblemDetails |
 | GET | `/api/ayar-islemleri/b2b-ayarlari/kullanicilar/{userId}` | JWT + ayar-islemleri.b2b-ayarlari.detail | path: userId / string (uuid) (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: B2BUserDetailDto<br>404: ProblemDetails |
-| PUT | `/api/ayar-islemleri/b2b-ayarlari/kullanicilar/{userId}` | JWT + ayar-islemleri.b2b-ayarlari.update | path: userId / string (uuid) (zorunlu)<br>body: request / UpdateB2BUserHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: B2BUserDetailDto<br>400: ProblemDetails<br>404: ProblemDetails |
+| PUT | `/api/ayar-islemleri/b2b-ayarlari/kullanicilar/{userId}` | JWT + ayar-islemleri.b2b-ayarlari.update | path: userId / string (uuid) (zorunlu)<br>body: request / UpdateB2BUserHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>200: B2BUserDetailDto<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
+| POST | `/api/ayar-islemleri/b2b-ayarlari/kullanicilar/{userId}/sifre-sifirla` | JWT + ayar-islemleri.b2b-ayarlari.update | path: userId / string (uuid) (zorunlu)<br>body: request / ResetB2BUserPasswordHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>204: bildirilmemis<br>400: ProblemDetails<br>404: ProblemDetails |
+| GET | `/api/ayar-islemleri/b2b-ayarlari/menuler` | JWT + ayar-islemleri.b2b-ayarlari.list |  | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;B2BMenuOptionDto&gt; |
 | GET | `/api/ayar-islemleri/cihazlar` | JWT + ayar-islemleri.cihazlar.list | query: branchNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;DeviceDto&gt;<br>400: ProblemDetails |
 | POST | `/api/ayar-islemleri/cihazlar` | JWT + ayar-islemleri.cihazlar.create | body: request / CreateDeviceHttpRequest (zorunlu) | 401: ProblemDetails<br>403: ProblemDetails<br>201: DeviceDto<br>400: ProblemDetails<br>404: ProblemDetails<br>409: ProblemDetails |
 | GET | `/api/ayar-islemleri/cihazlar/durum` | JWT + ayar-islemleri.cihazlar.list | query: branchNo / integer (int32) | 401: ProblemDetails<br>403: ProblemDetails<br>200: IReadOnlyCollection&lt;DeviceStatusDto&gt;<br>400: ProblemDetails |
@@ -1295,6 +1299,15 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `warehouseNo` | integer (int32) | Hayir |  |
 | `warehouseType` | integer (int32) | Hayir | nullable |
 
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.Ayarlar.B2BAccountLookupDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `accountCode` | string | Hayir | nullable |
+| `accountId` | string (uuid) | Hayir |  |
+| `accountTitle` | string | Hayir | nullable |
+| `taxNumber` | string | Hayir | nullable |
+
 ### FurpaMerkezApi.Application.Modules.AyarIslemleri.Ayarlar.B2BBulletinDto
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
@@ -1304,11 +1317,24 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `id` | integer (int32) | Hayir |  |
 | `link` | string | Hayir | nullable |
 
+### FurpaMerkezApi.Application.Modules.AyarIslemleri.Ayarlar.B2BMenuOptionDto
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `id` | integer (int32) | Hayir |  |
+| `menuGroupId` | integer (int32) | Hayir |  |
+| `menuGroupName` | string | Hayir | nullable |
+| `menuIcon` | string | Hayir | nullable |
+| `menuName` | string | Hayir | nullable |
+| `menuRoute` | string | Hayir | nullable |
+
 ### FurpaMerkezApi.Application.Modules.AyarIslemleri.Ayarlar.B2BUserAccountDto
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
 |---|---|---|---|
+| `accountCode` | string | Hayir | nullable |
 | `accountId` | string (uuid) | Hayir |  |
+| `accountTitle` | string | Hayir | nullable |
 | `category` | string | Hayir | nullable |
 | `id` | integer (int32) | Hayir |  |
 
@@ -1316,7 +1342,9 @@ Enum degerleri JSON sozlesmesinde bulunur.
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
 |---|---|---|---|
+| `accountCount` | integer (int32) | Hayir |  |
 | `accounts` | FurpaMerkezApi.Application.Modules.AyarIslemleri.Ayarlar.B2BUserAccountDto[] | Hayir | nullable |
+| `categories` | string[] | Hayir | nullable |
 | `createDate` | string (date-time) | Hayir |  |
 | `menus` | string | Hayir | nullable |
 | `status` | boolean | Hayir |  |
@@ -10822,6 +10850,31 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `plaque` | string | Hayir | minLength=0; maxLength=25; nullable |
 | `receiver` | string | Hayir | minLength=0; maxLength=25; nullable |
 
+### FurpaMerkezApi.WebApi.Controllers.Modules.AyarIslemleri.B2BAyarlari.B2BUserAccountInputHttpRequest
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `accountId` | string (uuid) | Evet |  |
+| `category` | string | Hayir | minLength=0; maxLength=50; nullable |
+
+### FurpaMerkezApi.WebApi.Controllers.Modules.AyarIslemleri.B2BAyarlari.CreateB2BUserHttpRequest
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `accounts` | FurpaMerkezApi.WebApi.Controllers.Modules.AyarIslemleri.B2BAyarlari.B2BUserAccountInputHttpRequest[] | Hayir | nullable |
+| `menus` | string | Hayir | nullable |
+| `password` | string | Evet | minLength=6; maxLength=100 |
+| `status` | boolean | Hayir | nullable |
+| `userEndDate` | string (date-time) | Evet |  |
+| `userFullName` | string | Evet | minLength=0; maxLength=70 |
+| `userMail` | string (email) | Evet | minLength=0; maxLength=150 |
+
+### FurpaMerkezApi.WebApi.Controllers.Modules.AyarIslemleri.B2BAyarlari.ResetB2BUserPasswordHttpRequest
+
+| JSON alani | Tip | Zorunlu | Sinirlar |
+|---|---|---|---|
+| `newPassword` | string | Evet | minLength=6; maxLength=100 |
+
 ### FurpaMerkezApi.WebApi.Controllers.Modules.AyarIslemleri.B2BAyarlari.SaveB2BBulletinHttpRequest
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
@@ -10834,6 +10887,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
 |---|---|---|---|
+| `accounts` | FurpaMerkezApi.WebApi.Controllers.Modules.AyarIslemleri.B2BAyarlari.B2BUserAccountInputHttpRequest[] | Hayir | nullable |
 | `menus` | string | Hayir | nullable |
 | `status` | boolean | Evet |  |
 | `userEndDate` | string (date-time) | Evet |  |
