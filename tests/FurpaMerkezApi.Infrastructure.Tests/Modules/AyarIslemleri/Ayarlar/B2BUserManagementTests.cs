@@ -85,11 +85,48 @@ public sealed class B2BUserManagementTests
     }
 
     [Fact]
+    public async Task CreateB2BUserAsync_RejectsMissingOrInactiveMikroAccount()
+    {
+        await using var contexts = CreateContexts();
+        var inactiveAccountId = Guid.NewGuid();
+        contexts.Mikro.CARI_HESAPLARs.Add(new CARI_HESAPLAR
+        {
+            cari_Guid = inactiveAccountId,
+            cari_kod = "32000999",
+            cari_unvan1 = "IPTAL CARI",
+            cari_iptal = true,
+            cari_create_date = DateTime.UtcNow
+        });
+        await contexts.Mikro.SaveChangesAsync();
+
+        var service = CreateService(contexts);
+        var request = new CreateB2BUserRequest(
+            "Gecersiz Cari",
+            "gecersiz@furpa.com.tr",
+            "Parola123",
+            true,
+            "1",
+            new DateTime(2027, 12, 31),
+            [new B2BUserAccountInput(inactiveAccountId, "01")]);
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(() =>
+            service.CreateB2BUserAsync(request, CancellationToken.None));
+
+        Assert.Contains(inactiveAccountId.ToString(), exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(await contexts.FurpaB2B.Users.ToArrayAsync());
+        Assert.Empty(await contexts.FurpaB2B.UserAccounts.ToArrayAsync());
+    }
+
+    [Fact]
     public async Task UpdateB2BUserAsync_PreservesAccountsWhenNullAndSyncsWhenProvided()
     {
         await using var contexts = CreateContexts();
         var accountA = Guid.NewGuid();
         var accountB = Guid.NewGuid();
+        contexts.Mikro.CARI_HESAPLARs.AddRange(
+            CreateMikroAccount(accountA, "32000101"),
+            CreateMikroAccount(accountB, "32000102"));
+        await contexts.Mikro.SaveChangesAsync();
         var service = CreateService(contexts);
         var endDate = new DateTime(2027, 12, 31);
 
@@ -128,6 +165,56 @@ public sealed class B2BUserManagementTests
         Assert.Equal("02.01", syncedAccount.Category);
         Assert.False(afterSync.Status);
         Assert.Equal(1, afterSync.AccountCount);
+    }
+
+    [Fact]
+    public async Task UpdateB2BUserAsync_PreservesLegacyAccountButRejectsNewMissingAccount()
+    {
+        await using var contexts = CreateContexts();
+        var legacyAccountId = Guid.NewGuid();
+        var missingAccountId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var endDate = new DateTime(2027, 12, 31);
+
+        contexts.FurpaB2B.Users.Add(new B2BUserEntity
+        {
+            UserId = userId,
+            UserFullName = "Legacy Kullanici",
+            UserMail = "legacy@furpa.com.tr",
+            UserPasswordSalt = new byte[128],
+            UserPasswordHash = new byte[64],
+            Status = true,
+            CreateDate = DateTime.UtcNow,
+            UserEndDate = endDate
+        });
+        contexts.FurpaB2B.UserAccounts.Add(new B2BUserAccountEntity
+        {
+            UserId = userId,
+            AccountId = legacyAccountId,
+            Category = "01"
+        });
+        await contexts.FurpaB2B.SaveChangesAsync();
+
+        var service = CreateService(contexts);
+        var exception = await Assert.ThrowsAsync<ArgumentException>(() =>
+            service.UpdateB2BUserAsync(
+                userId,
+                new UpdateB2BUserRequest(
+                    "Legacy Kullanici",
+                    "legacy@furpa.com.tr",
+                    true,
+                    "1",
+                    endDate,
+                    [
+                        new B2BUserAccountInput(legacyAccountId, "02"),
+                        new B2BUserAccountInput(missingAccountId, "01")
+                    ]),
+                CancellationToken.None));
+
+        Assert.Contains(missingAccountId.ToString(), exception.Message, StringComparison.OrdinalIgnoreCase);
+        var persistedAccount = await contexts.FurpaB2B.UserAccounts.SingleAsync();
+        Assert.Equal(legacyAccountId, persistedAccount.AccountId);
+        Assert.Equal("01", persistedAccount.Category);
     }
 
     [Fact]
@@ -204,6 +291,15 @@ public sealed class B2BUserManagementTests
         var computed = hmac.ComputeHash(Encoding.UTF8.GetBytes(password));
         return CryptographicOperations.FixedTimeEquals(computed, expectedHash);
     }
+
+    private static CARI_HESAPLAR CreateMikroAccount(Guid id, string code) => new()
+    {
+        cari_Guid = id,
+        cari_kod = code,
+        cari_unvan1 = $"CARI {code}",
+        cari_iptal = false,
+        cari_create_date = DateTime.UtcNow
+    };
 
     private static AyarlarService CreateService(TestContexts contexts) =>
         new(contexts.Furpa, contexts.FurpaB2B, contexts.Mikro);

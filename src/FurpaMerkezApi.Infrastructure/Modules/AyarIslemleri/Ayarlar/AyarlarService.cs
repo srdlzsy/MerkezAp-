@@ -1157,6 +1157,9 @@ public sealed class AyarlarService(
         var normalizedAccounts = NormalizeB2BAccountInputs(request.Accounts);
 
         await EnsureB2BUserMailAvailableAsync(userMail, excludedUserId: null, cancellationToken);
+        await EnsureActiveB2BAccountsExistAsync(
+            normalizedAccounts.Select(account => account.AccountId),
+            cancellationToken);
 
         var user = new B2BUserEntity
         {
@@ -1222,6 +1225,15 @@ public sealed class AyarlarService(
             var existingAccounts = await furpaB2BDbContext.UserAccounts
                 .Where(item => item.UserId == userId)
                 .ToArrayAsync(cancellationToken);
+
+            var existingAccountIds = existingAccounts
+                .Select(item => item.AccountId)
+                .ToHashSet();
+            await EnsureActiveB2BAccountsExistAsync(
+                normalizedAccounts
+                    .Select(account => account.AccountId)
+                    .Where(accountId => !existingAccountIds.Contains(accountId)),
+                cancellationToken);
 
             var accountsToRemove = existingAccounts
                 .Where(item => !desiredKeys.Contains((item.AccountId, item.Category.Trim().ToUpperInvariant())))
@@ -1364,6 +1376,40 @@ public sealed class AyarlarService(
         if (exists)
         {
             throw new InvalidOperationException($"Bu e-posta adresi ile kayitli B2B kullanicisi zaten var: {userMail}");
+        }
+    }
+
+    private async Task EnsureActiveB2BAccountsExistAsync(
+        IEnumerable<Guid> accountIds,
+        CancellationToken cancellationToken)
+    {
+        var requestedAccountIds = accountIds
+            .Distinct()
+            .ToArray();
+
+        if (requestedAccountIds.Length == 0)
+        {
+            return;
+        }
+
+        var activeAccountIds = await mikroDbContext.CARI_HESAPLARs
+            .AsNoTracking()
+            .Where(item =>
+                requestedAccountIds.Contains(item.cari_Guid) &&
+                !(item.cari_iptal ?? false))
+            .Select(item => item.cari_Guid)
+            .Distinct()
+            .ToArrayAsync(cancellationToken);
+
+        var missingAccountIds = requestedAccountIds
+            .Except(activeAccountIds)
+            .ToArray();
+
+        if (missingAccountIds.Length > 0)
+        {
+            throw new ArgumentException(
+                $"B2B kullanicisina baglanacak aktif Mikro carisi bulunamadi: {string.Join(", ", missingAccountIds)}",
+                nameof(accountIds));
         }
     }
 
