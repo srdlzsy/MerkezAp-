@@ -160,9 +160,11 @@ public sealed class CompanyMovementListQueryExecutor(MikroDbContext mikroDbConte
                         movement.sth_giris_depo_no,
                         movement.sth_cikis_depo_no
                     })
-                    .First()),
+                    .FirstOrDefault()),
             cancellationToken);
         var firstWarehouseByDocument = firstWarehouseRows
+            .Where(item => item is not null)
+            .Select(item => item!)
             .ToDictionary(
                 item => new DocumentIdentity(
                     item.sth_belge_tarih,

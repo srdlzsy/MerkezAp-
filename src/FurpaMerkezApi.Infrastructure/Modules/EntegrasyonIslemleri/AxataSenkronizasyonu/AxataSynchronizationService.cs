@@ -400,7 +400,7 @@ internal sealed class AxataSynchronizationService(
     private static int NormalizeTake(int? requestedTake, int configuredDefaultTake)
     {
         var take = requestedTake.GetValueOrDefault(configuredDefaultTake);
-        return take <= 0 ? Math.Max(1, configuredDefaultTake) : Math.Min(take, 100);
+        return take <= 0 ? Math.Max(1, configuredDefaultTake) : Math.Min(take, 500);
     }
 
     private static int NormalizeSkip(int? requestedSkip) =>

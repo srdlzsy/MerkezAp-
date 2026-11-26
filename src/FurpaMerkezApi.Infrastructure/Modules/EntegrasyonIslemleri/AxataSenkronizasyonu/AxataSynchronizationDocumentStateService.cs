@@ -48,6 +48,30 @@ internal sealed class AxataSynchronizationDocumentStateService(
             return;
         }
 
+        var succeededKeySnapshot = succeededDocumentKeys.ToArray();
+        var failureSnapshot = businessFailures.ToArray();
+
+        try
+        {
+            await RecordOutcomeCoreAsync(taskCode, succeededKeySnapshot, failureSnapshot, cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException exception)
+        {
+            logger.LogWarning(
+                exception,
+                "AXATA belge durum kaydi es zamanli degisti; islem bir kez guncel veriyle yineleniyor. TaskCode={TaskCode}",
+                Normalize(taskCode));
+            authDbContext.ChangeTracker.Clear();
+            await RecordOutcomeCoreAsync(taskCode, succeededKeySnapshot, failureSnapshot, cancellationToken);
+        }
+    }
+
+    private async Task RecordOutcomeCoreAsync(
+        string taskCode,
+        IReadOnlyCollection<string> succeededDocumentKeys,
+        IReadOnlyCollection<AxataSynchronizationDocumentFailure> businessFailures,
+        CancellationToken cancellationToken)
+    {
         var normalizedTaskCode = Normalize(taskCode);
         var succeededKeys = succeededDocumentKeys
             .Where(key => !string.IsNullOrWhiteSpace(key))
@@ -107,19 +131,41 @@ internal sealed class AxataSynchronizationDocumentStateService(
             LogOutcome(normalizedTaskCode, newState);
         }
 
-        var staleBoundary = now.AddDays(-30);
-        var manualReviewAfterFailureCount = ResolveManualReviewAfterFailureCount();
-        var staleStates = await authDbContext.AxataSynchronizationDocumentStates
-            .Where(item =>
-                item.LastFailedAtUtc < staleBoundary &&
-                item.FailureCount < manualReviewAfterFailureCount)
-            .ToArrayAsync(cancellationToken);
-        authDbContext.AxataSynchronizationDocumentStates.RemoveRange(staleStates);
-
         if (authDbContext.ChangeTracker.HasChanges())
         {
             await authDbContext.SaveChangesAsync(cancellationToken);
         }
+
+        await CleanupStaleStatesAsync(normalizedTaskCode, now, cancellationToken);
+    }
+
+    private async Task CleanupStaleStatesAsync(
+        string normalizedTaskCode,
+        DateTime now,
+        CancellationToken cancellationToken)
+    {
+        var staleBoundary = now.AddDays(-30);
+        var manualReviewAfterFailureCount = ResolveManualReviewAfterFailureCount();
+        var staleQuery = authDbContext.AxataSynchronizationDocumentStates
+            .Where(item =>
+                item.TaskCode == normalizedTaskCode &&
+                item.LastFailedAtUtc < staleBoundary &&
+                item.FailureCount < manualReviewAfterFailureCount);
+
+        if (authDbContext.Database.IsRelational())
+        {
+            await staleQuery.ExecuteDeleteAsync(cancellationToken);
+            return;
+        }
+
+        var staleStates = await staleQuery.ToArrayAsync(cancellationToken);
+        if (staleStates.Length == 0)
+        {
+            return;
+        }
+
+        authDbContext.AxataSynchronizationDocumentStates.RemoveRange(staleStates);
+        await authDbContext.SaveChangesAsync(cancellationToken);
     }
 
     private static string Normalize(string value) => value.Trim().ToUpperInvariant();

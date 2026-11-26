@@ -1,4 +1,5 @@
 using System.Data;
+using FurpaMerkezApi.Application.Common.Errors;
 using FurpaMerkezApi.Application.Modules.DuzeltmeIslemleri.MikroEvrakDuzenleme;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.BanknotTakipleri;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
@@ -388,6 +389,73 @@ public sealed partial class MikroDocumentEditingService(
                 throw;
             }
         });
+    }
+
+    public async Task<StockCardWarehouseBulkUpdateResponse> BulkUpdateStockCardWarehouseSettingsAsync(
+        BulkUpdateStockCardWarehouseSettingsRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (UseMikroApiForDocumentEditing())
+        {
+            return await BulkUpdateStockCardWarehouseSettingsMikroApiAsync(request, cancellationToken);
+        }
+
+        ValidateUpdateUser(request.CurrentUserWarehouseNo);
+        var stockCode = NormalizeRequiredText(request.StockCode, 25, nameof(request.StockCode));
+        var patch = request.Patch ?? throw new ArgumentException("Patch is required.", nameof(request.Patch));
+        if (!HasStockCardWarehousePatch(patch))
+        {
+            throw new ArgumentException(
+                "At least one warehouse stock field or resetToGlobal must be provided.",
+                nameof(request.Patch));
+        }
+
+        var targets = await ResolveBulkWarehouseTargetsAsync(
+            request.WarehouseNos,
+            request.ApplyToAllActiveWarehouses,
+            cancellationToken);
+        var items = new List<StockCardWarehouseBulkUpdateItemDto>(targets.Count);
+
+        foreach (var target in targets)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                var response = await UpdateStockCardWarehouseSettingsAsync(
+                    new UpdateStockCardWarehouseSettingsRequest(
+                        stockCode,
+                        target.WarehouseNo,
+                        patch,
+                        request.CurrentUserWarehouseNo),
+                    cancellationToken);
+                items.Add(new StockCardWarehouseBulkUpdateItemDto(
+                    target.WarehouseNo,
+                    target.WarehouseName,
+                    true,
+                    null,
+                    response.WarehouseSettings));
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                items.Add(new StockCardWarehouseBulkUpdateItemDto(
+                    target.WarehouseNo,
+                    target.WarehouseName,
+                    false,
+                    exception.Message,
+                    null));
+            }
+        }
+
+        var succeededCount = items.Count(item => item.Succeeded);
+        return new StockCardWarehouseBulkUpdateResponse(
+            items.Count,
+            succeededCount,
+            items.Count - succeededCount,
+            items);
     }
 
     public async Task<IReadOnlyCollection<WarehouseCardListItemDto>> SearchWarehouseCardsAsync(
@@ -974,6 +1042,81 @@ public sealed partial class MikroDocumentEditingService(
         });
     }
 
+    public async Task<StockSalesPriceBulkUpsertResponse> BulkUpsertStockSalesPriceAsync(
+        BulkUpsertStockSalesPriceRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (UseMikroApiForDocumentEditing())
+        {
+            return await BulkUpsertStockSalesPriceMikroApiAsync(request, cancellationToken);
+        }
+
+        ValidateUpdateUser(request.CurrentUserWarehouseNo);
+        var stockCode = NormalizeRequiredText(request.StockCode, 25, nameof(request.StockCode));
+        ValidateStockSalesPriceRequest(new UpsertStockSalesPriceRequest(
+            stockCode,
+            1,
+            request.PriceListNo,
+            request.PaymentPlanNo,
+            request.UnitPointer,
+            request.Price,
+            request.CurrencyType,
+            request.ChangeReason,
+            request.CurrentUserWarehouseNo));
+
+        var targets = await ResolveBulkWarehouseTargetsAsync(
+            request.WarehouseNos,
+            request.ApplyToAllActiveWarehouses,
+            cancellationToken);
+        var items = new List<StockSalesPriceBulkUpsertItemDto>(targets.Count);
+
+        foreach (var target in targets)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                var response = await UpsertStockSalesPriceAsync(
+                    new UpsertStockSalesPriceRequest(
+                        stockCode,
+                        target.WarehouseNo,
+                        request.PriceListNo,
+                        request.PaymentPlanNo,
+                        request.UnitPointer,
+                        request.Price,
+                        request.CurrencyType,
+                        request.ChangeReason,
+                        request.CurrentUserWarehouseNo),
+                    cancellationToken);
+                items.Add(new StockSalesPriceBulkUpsertItemDto(
+                    target.WarehouseNo,
+                    target.WarehouseName,
+                    true,
+                    null,
+                    response.SalesPrice));
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                items.Add(new StockSalesPriceBulkUpsertItemDto(
+                    target.WarehouseNo,
+                    target.WarehouseName,
+                    false,
+                    exception.Message,
+                    null));
+            }
+        }
+
+        var succeededCount = items.Count(item => item.Succeeded);
+        return new StockSalesPriceBulkUpsertResponse(
+            items.Count,
+            succeededCount,
+            items.Count - succeededCount,
+            items);
+    }
+
     public async Task<IReadOnlyCollection<MikroDocumentCandidateDto>> FindDocumentsAsync(
         MikroDocumentSearchRequest request,
         CancellationToken cancellationToken)
@@ -1218,12 +1361,23 @@ public sealed partial class MikroDocumentEditingService(
                 if (request.HardDelete)
                 {
                     var movementGuids = rows.Select(row => row.sth_Guid).ToArray();
-                    var extraRows = await mikroWriteDbContext.STOK_HAREKETLERI_EKs
-                        .Where(row => row.sthek_related_uid.HasValue && movementGuids.Contains(row.sthek_related_uid.Value))
-                        .ToArrayAsync(cancellationToken);
+                    mikroWriteDbContext.ChangeTracker.Clear();
 
-                    mikroWriteDbContext.STOK_HAREKETLERI_EKs.RemoveRange(extraRows);
-                    mikroWriteDbContext.STOK_HAREKETLERIs.RemoveRange(rows);
+                    await mikroWriteDbContext.STOK_HAREKETLERI_EKs
+                        .Where(row => row.sthek_related_uid.HasValue && movementGuids.Contains(row.sthek_related_uid.Value))
+                        .ExecuteDeleteAsync(cancellationToken);
+
+                    var deletedMovementCount = await CreateStockMovementQuery(
+                            mikroWriteDbContext.STOK_HAREKETLERIs,
+                            request.Lookup)
+                        .ExecuteDeleteAsync(cancellationToken);
+                    if (deletedMovementCount != rows.Length)
+                    {
+                        throw new OperationConflictException(
+                            OperationConflictErrorCodes.MikroDocumentChanged,
+                            "Mikro evraki silme sirasinda baska bir islem tarafindan degistirildi. Ekrani yenileyip evraki tekrar kontrol edin.",
+                            retryable: false);
+                    }
                 }
                 else
                 {
@@ -1237,7 +1391,10 @@ public sealed partial class MikroDocumentEditingService(
                     }
                 }
 
-                await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+                if (!request.HardDelete)
+                {
+                    await mikroWriteDbContext.SaveChangesAsync(cancellationToken);
+                }
                 await transaction.CommitAsync(cancellationToken);
 
                 return new MikroDocumentDeleteResponse(
@@ -4566,6 +4723,62 @@ public sealed partial class MikroDocumentEditingService(
         }
     }
 
+    private async Task<IReadOnlyList<BulkWarehouseTarget>> ResolveBulkWarehouseTargetsAsync(
+        IReadOnlyCollection<int> requestedWarehouseNos,
+        bool applyToAllActiveWarehouses,
+        CancellationToken cancellationToken)
+    {
+        var requested = requestedWarehouseNos
+            .Where(warehouseNo => warehouseNo > 0)
+            .Distinct()
+            .OrderBy(warehouseNo => warehouseNo)
+            .ToArray();
+        if (!applyToAllActiveWarehouses && requested.Length == 0)
+        {
+            throw new ArgumentException(
+                "At least one warehouse must be selected when applyToAllActiveWarehouses is false.",
+                nameof(requestedWarehouseNos));
+        }
+
+        if (requested.Length > 500)
+        {
+            throw new ArgumentException("At most 500 warehouses can be selected.", nameof(requestedWarehouseNos));
+        }
+
+        var query = mikroWriteDbContext.DEPOLARs
+            .AsNoTracking()
+            .Where(item =>
+                item.dep_no.HasValue &&
+                item.dep_no.Value > 0 &&
+                item.dep_iptal != true &&
+                item.dep_hidden != true);
+        if (!applyToAllActiveWarehouses)
+        {
+            query = query.Where(item => requested.Contains(item.dep_no!.Value));
+        }
+
+        var targets = await query
+            .OrderBy(item => item.dep_no)
+            .Select(item => new BulkWarehouseTarget(
+                item.dep_no!.Value,
+                item.dep_adi ?? string.Empty))
+            .ToArrayAsync(cancellationToken);
+        if (targets.Length == 0)
+        {
+            throw new KeyNotFoundException("No active warehouse was found for the bulk operation.");
+        }
+
+        if (!applyToAllActiveWarehouses && targets.Length != requested.Length)
+        {
+            var found = targets.Select(item => item.WarehouseNo).ToHashSet();
+            var missing = requested.Where(warehouseNo => !found.Contains(warehouseNo));
+            throw new KeyNotFoundException(
+                $"Active warehouse was not found: {string.Join(", ", missing)}");
+        }
+
+        return targets;
+    }
+
     private static void ValidateStockSalesPriceKey(
         int warehouseNo,
         int priceListNo,
@@ -4589,6 +4802,8 @@ public sealed partial class MikroDocumentEditingService(
 
         _ = ValidateUnitPointer(unitPointer, nameof(unitPointer));
     }
+
+    private sealed record BulkWarehouseTarget(int WarehouseNo, string WarehouseName);
 
     private static void ValidateStockMovementUpdate(UpdateStockMovementDocumentRequest request)
     {

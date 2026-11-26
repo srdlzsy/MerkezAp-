@@ -424,6 +424,14 @@ public sealed class KasaSayimlariController(
                     .ToArray()),
             cancellationToken);
 
+        await RecordCashSummaryFlowAsync(
+            warehouseNo,
+            documentSerie,
+            documentOrderNo,
+            DocumentFlowStep.DocumentUpdated,
+            "Icmal odeme detaylari guncellendi.",
+            cancellationToken);
+
         return Ok(response);
     }
 
@@ -448,6 +456,14 @@ public sealed class KasaSayimlariController(
                 request.ZReportNo!.Value,
                 request.ZTotalValue!.Value,
                 request.SummaryDate!.Value),
+            cancellationToken);
+
+        await RecordCashSummaryFlowAsync(
+            warehouseNo,
+            documentSerie,
+            documentOrderNo,
+            DocumentFlowStep.DocumentUpdated,
+            "Icmal baslik bilgileri guncellendi.",
             cancellationToken);
 
         return Ok(response);
@@ -479,6 +495,14 @@ public sealed class KasaSayimlariController(
                     .ToArray()),
             cancellationToken);
 
+        await RecordCashSummaryFlowAsync(
+            warehouseNo,
+            documentSerie,
+            documentOrderNo,
+            DocumentFlowStep.DocumentUpdated,
+            "Icmal banknot hareketleri guncellendi.",
+            cancellationToken);
+
         return Ok(response);
     }
 
@@ -506,6 +530,14 @@ public sealed class KasaSayimlariController(
                         line.Total,
                         line.Value))
                     .ToArray()),
+            cancellationToken);
+
+        await RecordCashSummaryFlowAsync(
+            warehouseNo,
+            documentSerie,
+            documentOrderNo,
+            DocumentFlowStep.DocumentUpdated,
+            "Icmal hediye ceki hareketleri guncellendi.",
             cancellationToken);
 
         return Ok(response);
@@ -540,6 +572,14 @@ public sealed class KasaSayimlariController(
                     .ToArray()),
             cancellationToken);
 
+        await RecordCashSummaryFlowAsync(
+            warehouseNo,
+            documentSerie,
+            documentOrderNo,
+            DocumentFlowStep.DocumentUpdated,
+            "Icmal odeme detaylari guncellendi.",
+            cancellationToken);
+
         return Ok(response);
     }
 
@@ -567,6 +607,14 @@ public sealed class KasaSayimlariController(
                         line.Quantity!.Value,
                         line.Total))
                     .ToArray()),
+            cancellationToken);
+
+        await RecordCashSummaryFlowAsync(
+            warehouseNo,
+            documentSerie,
+            documentOrderNo,
+            DocumentFlowStep.DocumentUpdated,
+            "Icmal banknot hareketleri guncellendi.",
             cancellationToken);
 
         return Ok(response);
@@ -598,6 +646,14 @@ public sealed class KasaSayimlariController(
                     .ToArray()),
             cancellationToken);
 
+        await RecordCashSummaryFlowAsync(
+            warehouseNo,
+            documentSerie,
+            documentOrderNo,
+            DocumentFlowStep.DocumentUpdated,
+            "Icmal hediye ceki hareketleri guncellendi.",
+            cancellationToken);
+
         return Ok(response);
     }
 
@@ -617,6 +673,14 @@ public sealed class KasaSayimlariController(
                 resolvedWarehouseNo,
                 documentSerie,
                 documentOrderNo),
+            cancellationToken);
+
+        await RecordCashSummaryFlowAsync(
+            resolvedWarehouseNo,
+            documentSerie,
+            documentOrderNo,
+            DocumentFlowStep.DocumentDeleted,
+            "Icmal kaydi silindi.",
             cancellationToken);
 
         return Ok(response);
@@ -640,8 +704,41 @@ public sealed class KasaSayimlariController(
                 documentOrderNo),
             cancellationToken);
 
+        await RecordCashSummaryFlowAsync(
+            warehouseNo,
+            documentSerie,
+            documentOrderNo,
+            DocumentFlowStep.DocumentDeleted,
+            "Icmal kaydi silindi.",
+            cancellationToken);
+
         return Ok(response);
     }
+
+    private Task RecordCashSummaryFlowAsync(
+        int warehouseNo,
+        string documentSerie,
+        int documentOrderNo,
+        DocumentFlowStep step,
+        string message,
+        CancellationToken cancellationToken) =>
+        documentFlowService.RecordAsync(
+            new RecordDocumentFlowRequest(
+                DocumentFlowKeys.Create(
+                    DocumentFlowType.CashSummary,
+                    warehouseNo,
+                    documentSerie,
+                    documentOrderNo),
+                DocumentFlowType.CashSummary,
+                warehouseNo,
+                null,
+                documentSerie,
+                documentOrderNo,
+                step,
+                DocumentFlowStatus.Succeeded,
+                message,
+                ChangedByUserId: User.GetRequiredUserId()),
+            cancellationToken);
 
     private async Task<ActionResult<IReadOnlyCollection<CashSummaryDetailItemDto>>> DetailInternal(
         string documentSerie,

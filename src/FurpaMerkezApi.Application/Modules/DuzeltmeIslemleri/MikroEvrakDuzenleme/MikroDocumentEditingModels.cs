@@ -143,6 +143,26 @@ public sealed record UpdateStockCardWarehouseSettingsRequest(
     StockCardWarehousePatchDto Patch,
     int CurrentUserWarehouseNo);
 
+public sealed record BulkUpdateStockCardWarehouseSettingsRequest(
+    string StockCode,
+    IReadOnlyCollection<int> WarehouseNos,
+    bool ApplyToAllActiveWarehouses,
+    StockCardWarehousePatchDto Patch,
+    int CurrentUserWarehouseNo);
+
+public sealed record StockCardWarehouseBulkUpdateItemDto(
+    int WarehouseNo,
+    string WarehouseName,
+    bool Succeeded,
+    string? ErrorMessage,
+    StockCardWarehouseSettingsDto? WarehouseSettings);
+
+public sealed record StockCardWarehouseBulkUpdateResponse(
+    int RequestedCount,
+    int SucceededCount,
+    int FailedCount,
+    IReadOnlyCollection<StockCardWarehouseBulkUpdateItemDto> Items);
+
 public sealed record DeleteStockCardWarehouseSettingsRequest(
     string StockCode,
     int WarehouseNo,
@@ -476,6 +496,31 @@ public sealed record UpsertStockSalesPriceRequest(
     byte CurrencyType,
     byte ChangeReason,
     int CurrentUserWarehouseNo);
+
+public sealed record BulkUpsertStockSalesPriceRequest(
+    string StockCode,
+    IReadOnlyCollection<int> WarehouseNos,
+    bool ApplyToAllActiveWarehouses,
+    int PriceListNo,
+    int PaymentPlanNo,
+    byte UnitPointer,
+    double Price,
+    byte CurrencyType,
+    byte ChangeReason,
+    int CurrentUserWarehouseNo);
+
+public sealed record StockSalesPriceBulkUpsertItemDto(
+    int WarehouseNo,
+    string WarehouseName,
+    bool Succeeded,
+    string? ErrorMessage,
+    StockSalesPriceDto? SalesPrice);
+
+public sealed record StockSalesPriceBulkUpsertResponse(
+    int RequestedCount,
+    int SucceededCount,
+    int FailedCount,
+    IReadOnlyCollection<StockSalesPriceBulkUpsertItemDto> Items);
 
 public sealed record DeleteStockSalesPriceRequest(
     string StockCode,

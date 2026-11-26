@@ -114,6 +114,99 @@ public sealed partial class MikroDocumentEditingService
             await ReadWithRetryAsync(() => ReadStockWarehouseSettingAsync(stockCode, warehouseNo, cancellationToken), cancellationToken));
     }
 
+    private async Task<StockCardWarehouseBulkUpdateResponse> BulkUpdateStockCardWarehouseSettingsMikroApiAsync(
+        BulkUpdateStockCardWarehouseSettingsRequest request,
+        CancellationToken cancellationToken)
+    {
+        ValidateUpdateUser(request.CurrentUserWarehouseNo);
+        var stockCode = NormalizeRequiredText(request.StockCode, 25, nameof(request.StockCode));
+        var patch = request.Patch ?? throw new ArgumentException("Patch is required.", nameof(request.Patch));
+        if (!HasStockCardWarehousePatch(patch))
+        {
+            throw new ArgumentException("At least one warehouse stock field or resetToGlobal must be provided.", nameof(request.Patch));
+        }
+
+        _ = await mikroWriteDbContext.STOKLARs.AsNoTracking()
+            .FirstOrDefaultAsync(item => item.sto_kod == stockCode, cancellationToken)
+            ?? throw new KeyNotFoundException("Stock card was not found in Mikro write database.");
+        var targets = await ResolveBulkWarehouseTargetsAsync(
+            request.WarehouseNos,
+            request.ApplyToAllActiveWarehouses,
+            cancellationToken);
+        var targetNos = targets.Select(item => item.WarehouseNo).ToArray();
+        var existing = await mikroWriteDbContext.STOK_DEPO_DETAYLARIs.AsNoTracking()
+            .Where(item =>
+                item.sdp_depo_kod == stockCode &&
+                item.sdp_depo_no.HasValue &&
+                targetNos.Contains(item.sdp_depo_no.Value))
+            .Select(item => new { WarehouseNo = item.sdp_depo_no!.Value, Row = item })
+            .ToDictionaryAsync(item => item.WarehouseNo, item => item.Row, cancellationToken);
+        var records = new List<Dictionary<string, object?>>(targets.Count);
+        var updateUser = ResolveMikroUserNo(request.CurrentUserWarehouseNo);
+        var updatedAt = DateTime.Now;
+
+        foreach (var target in targets)
+        {
+            if (!existing.TryGetValue(target.WarehouseNo, out var detail))
+            {
+                if (patch.ResetToGlobal && !HasStockCardWarehouseValuePatch(patch))
+                {
+                    continue;
+                }
+
+                detail = CreateStockCardWarehouseDetail(stockCode, target.WarehouseNo, updateUser, updatedAt);
+                ApplyStockCardWarehousePatch(detail, patch);
+                records.Add(BuildInsertRecord(detail, StockWarehouseSettingsTableNo));
+                continue;
+            }
+
+            if (patch.ResetToGlobal && !HasStockCardWarehouseValuePatch(patch))
+            {
+                records.Add(BuildDeleteRecord(
+                    StockWarehouseSettingsTableNo,
+                    nameof(detail.sdp_Guid),
+                    detail.sdp_Guid,
+                    nameof(detail.sdp_lastup_date),
+                    detail.sdp_lastup_date));
+                continue;
+            }
+
+            var original = SnapshotValues(detail);
+            ApplyStockCardWarehousePatch(detail, patch);
+            records.Add(BuildPartialUpdateRecord(
+                detail,
+                original,
+                StockWarehouseSettingsTableNo,
+                nameof(detail.sdp_Guid),
+                nameof(detail.sdp_lastup_date)));
+        }
+
+        await PostBulkRecordsAsync(records, cancellationToken);
+        var savedSettings = await ReadWithRetryAsync(async () =>
+        {
+            var rows = await GetStockCardWarehouseSettingsAsync(stockCode, null, cancellationToken);
+            var byWarehouse = rows
+                .Where(item => targetNos.Contains(item.WarehouseNo))
+                .ToDictionary(item => item.WarehouseNo);
+            if (byWarehouse.Count != targets.Count)
+            {
+                throw new KeyNotFoundException("Some stock warehouse settings were not visible after Mikro API write.");
+            }
+
+            return byWarehouse;
+        }, cancellationToken);
+
+        var items = targets
+            .Select(target => new StockCardWarehouseBulkUpdateItemDto(
+                target.WarehouseNo,
+                target.WarehouseName,
+                true,
+                null,
+                savedSettings[target.WarehouseNo]))
+            .ToArray();
+        return new(items.Length, items.Length, 0, items);
+    }
+
     private async Task<MikroDocumentDeleteResponse> DeleteStockCardWarehouseSettingsMikroApiAsync(
         DeleteStockCardWarehouseSettingsRequest request,
         CancellationToken cancellationToken)
@@ -257,6 +350,109 @@ public sealed partial class MikroDocumentEditingService
         var dto = (await GetStockSalesPricesAsync(stockCode, request.WarehouseNo, cancellationToken))
             .Single(item => item.PriceGuid == saved.sfiyat_Guid);
         return new(new($"stok-kartlari/{stockCode}/satis-fiyatlari/{request.WarehouseNo}", 1, updatedAt, ResolveMikroUserNo(request.CurrentUserWarehouseNo)), created, previousPrice, dto);
+    }
+
+    private async Task<StockSalesPriceBulkUpsertResponse> BulkUpsertStockSalesPriceMikroApiAsync(
+        BulkUpsertStockSalesPriceRequest request,
+        CancellationToken cancellationToken)
+    {
+        ValidateUpdateUser(request.CurrentUserWarehouseNo);
+        var stockCode = NormalizeRequiredText(request.StockCode, 25, nameof(request.StockCode));
+        var targets = await ResolveBulkWarehouseTargetsAsync(
+            request.WarehouseNos,
+            request.ApplyToAllActiveWarehouses,
+            cancellationToken);
+        var targetNos = targets.Select(item => item.WarehouseNo).ToArray();
+        var template = new UpsertStockSalesPriceRequest(
+            stockCode,
+            targets[0].WarehouseNo,
+            request.PriceListNo,
+            request.PaymentPlanNo,
+            request.UnitPointer,
+            request.Price,
+            request.CurrencyType,
+            request.ChangeReason,
+            request.CurrentUserWarehouseNo);
+        ValidateStockSalesPriceRequest(template);
+        _ = await mikroWriteDbContext.STOKLARs.AsNoTracking()
+            .FirstOrDefaultAsync(item => item.sto_kod == stockCode, cancellationToken)
+            ?? throw new KeyNotFoundException("Stock card was not found in Mikro write database.");
+        _ = await mikroWriteDbContext.STOK_SATIS_FIYAT_LISTE_TANIMLARIs.AsNoTracking()
+            .FirstOrDefaultAsync(
+                item => item.sfl_sirano == request.PriceListNo && item.sfl_iptal != true && item.sfl_hidden != true,
+                cancellationToken)
+            ?? throw new KeyNotFoundException($"Active sales price list was not found: {request.PriceListNo}");
+
+        var existingRows = await mikroWriteDbContext.STOK_SATIS_FIYAT_LISTELERIs.AsNoTracking()
+            .Where(item =>
+                item.sfiyat_iptal != true &&
+                item.sfiyat_hidden != true &&
+                item.sfiyat_stokkod == stockCode &&
+                item.sfiyat_listesirano == request.PriceListNo &&
+                item.sfiyat_deposirano.HasValue &&
+                targetNos.Contains(item.sfiyat_deposirano.Value) &&
+                item.sfiyat_birim_pntr == request.UnitPointer &&
+                item.sfiyat_odemeplan == request.PaymentPlanNo)
+            .Select(item => new { WarehouseNo = item.sfiyat_deposirano!.Value, Row = item })
+            .ToDictionaryAsync(item => item.WarehouseNo, item => item.Row, cancellationToken);
+        var records = new List<Dictionary<string, object?>>(targets.Count);
+        var updateUser = ResolveMikroUserNo(request.CurrentUserWarehouseNo);
+        var updatedAt = DateTime.Now;
+
+        foreach (var target in targets)
+        {
+            var itemRequest = template with { WarehouseNo = target.WarehouseNo };
+            if (!existingRows.TryGetValue(target.WarehouseNo, out var row))
+            {
+                row = CreateStockSalesPrice(itemRequest, stockCode, updateUser, updatedAt);
+                records.Add(BuildInsertRecord(row, StockSalesPriceTableNo));
+                continue;
+            }
+
+            var original = SnapshotValues(row);
+            row.sfiyat_iptal = false;
+            row.sfiyat_hidden = false;
+            row.sfiyat_kilitli = false;
+            row.sfiyat_fiyati = request.Price;
+            row.sfiyat_doviz = request.CurrencyType;
+            row.sfiyat_deg_nedeni = request.ChangeReason;
+            records.Add(BuildPartialUpdateRecord(
+                row,
+                original,
+                StockSalesPriceTableNo,
+                nameof(row.sfiyat_Guid),
+                nameof(row.sfiyat_lastup_date)));
+        }
+
+        await PostBulkRecordsAsync(records, cancellationToken);
+        var savedPrices = await ReadWithRetryAsync(async () =>
+        {
+            var rows = await GetStockSalesPricesAsync(stockCode, null, cancellationToken);
+            var byWarehouse = rows
+                .Where(item =>
+                    targetNos.Contains(item.WarehouseNo) &&
+                    item.PriceListNo == request.PriceListNo &&
+                    item.PaymentPlanNo == request.PaymentPlanNo &&
+                    item.UnitPointer == request.UnitPointer)
+                .GroupBy(item => item.WarehouseNo)
+                .ToDictionary(group => group.Key, group => group.First());
+            if (byWarehouse.Count != targets.Count)
+            {
+                throw new KeyNotFoundException("Some stock sales prices were not visible after Mikro API write.");
+            }
+
+            return byWarehouse;
+        }, cancellationToken);
+
+        var items = targets
+            .Select(target => new StockSalesPriceBulkUpsertItemDto(
+                target.WarehouseNo,
+                target.WarehouseName,
+                true,
+                null,
+                savedPrices[target.WarehouseNo]))
+            .ToArray();
+        return new(items.Length, items.Length, 0, items);
     }
 
     private async Task<MikroDocumentDeleteResponse> DeleteStockSalesPriceMikroApiAsync(
@@ -586,17 +782,8 @@ public sealed partial class MikroDocumentEditingService
 
     private async Task PostBulkRecordAsync(
         Dictionary<string, object?> record,
-        CancellationToken cancellationToken)
-    {
-        var result = await mikroApiClient.PostWithMikroPayloadAsync<JsonElement>(
-            BulkRecordPath,
-            new { Kayit = new[] { record } },
-            cancellationToken);
-        if (result.IsError)
-        {
-            throw new InvalidOperationException(result.ErrorMessage ?? "Mikro API record write failed.");
-        }
-    }
+        CancellationToken cancellationToken) =>
+        await PostBulkRecordsAsync([record], cancellationToken);
 
     private static Dictionary<string, object?> SnapshotValues(object row) =>
         row.GetType()
@@ -694,8 +881,7 @@ public sealed partial class MikroDocumentEditingService
     private async Task PostBulkRecordsAsync<T>(IEnumerable<T> rows, string recordType, CancellationToken cancellationToken)
     {
         var records = rows.Select(row => ToBulkRecord(row!, CustomerMovementTableNo, recordType)).ToArray();
-        var result = await mikroApiClient.PostWithMikroPayloadAsync<JsonElement>(BulkRecordPath, new { Kayit = records }, cancellationToken);
-        if (result.IsError) throw new InvalidOperationException(result.ErrorMessage ?? "Mikro API bulk record update failed.");
+        await PostBulkRecordsAsync(records, cancellationToken);
     }
 
     private async Task PostBulkRecordsAsync(
@@ -704,8 +890,17 @@ public sealed partial class MikroDocumentEditingService
     {
         var mappedRecords = records.ToArray();
         if (mappedRecords.Length == 0) return;
-        var result = await mikroApiClient.PostWithMikroPayloadAsync<JsonElement>(BulkRecordPath, new { Kayit = mappedRecords }, cancellationToken);
-        if (result.IsError) throw new InvalidOperationException(result.ErrorMessage ?? "Mikro API bulk record update failed.");
+        foreach (var batch in mappedRecords.Chunk(50))
+        {
+            var result = await mikroApiClient.PostWithMikroPayloadAsync<JsonElement>(
+                BulkRecordPath,
+                new { Kayit = batch },
+                cancellationToken);
+            if (result.IsError)
+            {
+                throw new InvalidOperationException(result.ErrorMessage ?? "Mikro API bulk record update failed.");
+            }
+        }
     }
 
     private static Dictionary<string, object?> ToBulkRecord(object row, string tableNo, string recordType)

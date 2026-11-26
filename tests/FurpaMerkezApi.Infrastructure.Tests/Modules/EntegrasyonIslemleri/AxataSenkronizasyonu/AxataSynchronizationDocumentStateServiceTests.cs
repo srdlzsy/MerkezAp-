@@ -129,6 +129,36 @@ public sealed class AxataSynchronizationDocumentStateServiceTests
             CancellationToken.None));
     }
 
+    [Fact]
+    public async Task StaleCleanup_OnlyRemovesStatesForCurrentTask()
+    {
+        await using var dbContext = CreateDbContext();
+        var clock = new MutableClock(new DateTime(2026, 9, 1, 6, 0, 0, DateTimeKind.Utc));
+        var service = CreateService(dbContext, clock);
+
+        await service.RecordOutcomeAsync(
+            "c01-outbound-delivery-import",
+            [],
+            [new AxataSynchronizationDocumentFailure("101", "C01 veri sorunu.")],
+            CancellationToken.None);
+        await service.RecordOutcomeAsync(
+            "g01-inbound-atf-import",
+            [],
+            [new AxataSynchronizationDocumentFailure("F50.202", "G01 veri sorunu.")],
+            CancellationToken.None);
+
+        clock.UtcNow = clock.UtcNow.AddDays(31);
+        await service.RecordOutcomeAsync(
+            "c01-outbound-delivery-import",
+            [],
+            [],
+            CancellationToken.None);
+
+        var remainingState = await dbContext.AxataSynchronizationDocumentStates.SingleAsync();
+        Assert.Equal("G01-INBOUND-ATF-IMPORT", remainingState.TaskCode);
+        Assert.Equal("F50.202", remainingState.DocumentKey);
+    }
+
     private static AuthDbContext CreateDbContext() => new(
         new DbContextOptionsBuilder<AuthDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())

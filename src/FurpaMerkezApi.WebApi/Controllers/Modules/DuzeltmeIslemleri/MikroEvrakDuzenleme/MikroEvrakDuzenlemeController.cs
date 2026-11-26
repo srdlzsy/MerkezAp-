@@ -138,6 +138,43 @@ public sealed class MikroEvrakDuzenlemeController(
         return Ok(response);
     }
 
+    [HttpPut("stok-kartlari/{stockCode}/depolar/toplu")]
+    [Authorize(Policy = UpdatePolicy)]
+    [ProducesResponseType(typeof(StockCardWarehouseBulkUpdateResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<StockCardWarehouseBulkUpdateResponse>> BulkUpdateStockCardWarehouseSettings(
+        string stockCode,
+        [FromBody] StockCardWarehouseBulkPatchHttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var currentUserWarehouseNo = User.GetRequiredWarehouseNo();
+        var response = await service.BulkUpdateStockCardWarehouseSettingsAsync(
+            new BulkUpdateStockCardWarehouseSettingsRequest(
+                stockCode,
+                request.WarehouseNos,
+                request.ApplyToAllActiveWarehouses,
+                request.Patch.ToApplicationRequest(),
+                currentUserWarehouseNo),
+            cancellationToken);
+
+        foreach (var item in response.Items.Where(item => item.Succeeded && item.WarehouseSettings is not null))
+        {
+            await RecordReferenceFlowAsync(
+                DocumentFlowType.StockCard,
+                currentUserWarehouseNo,
+                "STOKDEPO",
+                $"{stockCode}:{item.WarehouseNo}",
+                DocumentFlowStep.MasterDataUpdated,
+                $"Stok depo ayari toplu islemle duzenlendi. Depo: {item.WarehouseNo}.",
+                stockCode,
+                cancellationToken,
+                targetWarehouseNo: item.WarehouseNo);
+        }
+
+        return Ok(response);
+    }
+
     [HttpDelete("stok-kartlari/{stockCode}/depolar/{warehouseNo:int}")]
     [Authorize(Policy = DeletePolicy)]
     [ProducesResponseType(typeof(MikroDocumentDeleteResponse), StatusCodes.Status200OK)]
@@ -372,6 +409,49 @@ public sealed class MikroEvrakDuzenlemeController(
             response.SalesPrice.StockCode,
             cancellationToken,
             targetWarehouseNo: response.SalesPrice.WarehouseNo);
+
+        return Ok(response);
+    }
+
+    [HttpPut("stok-kartlari/{stockCode}/satis-fiyatlari/toplu")]
+    [Authorize(Policy = UpdatePolicy)]
+    [ProducesResponseType(typeof(StockSalesPriceBulkUpsertResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<StockSalesPriceBulkUpsertResponse>> BulkUpsertStockSalesPrice(
+        string stockCode,
+        [FromBody] StockSalesPriceBulkUpsertHttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var currentUserWarehouseNo = User.GetRequiredWarehouseNo();
+        var response = await service.BulkUpsertStockSalesPriceAsync(
+            new BulkUpsertStockSalesPriceRequest(
+                stockCode,
+                request.WarehouseNos,
+                request.ApplyToAllActiveWarehouses,
+                request.PriceListNo,
+                request.PaymentPlanNo,
+                request.UnitPointer,
+                request.Price,
+                request.CurrencyType,
+                request.ChangeReason,
+                currentUserWarehouseNo),
+            cancellationToken);
+
+        foreach (var item in response.Items.Where(item => item.Succeeded && item.SalesPrice is not null))
+        {
+            var price = item.SalesPrice!;
+            await RecordReferenceFlowAsync(
+                DocumentFlowType.StockSalesPrice,
+                currentUserWarehouseNo,
+                "SATISFIYATI",
+                $"{stockCode}:{item.WarehouseNo}:{price.PriceListNo}:{price.PaymentPlanNo}:{price.UnitPointer}",
+                DocumentFlowStep.PriceUpdated,
+                $"Satis fiyati toplu islemle guncellendi. Depo: {item.WarehouseNo}, fiyat: {price.Price}.",
+                stockCode,
+                cancellationToken,
+                targetWarehouseNo: item.WarehouseNo);
+        }
 
         return Ok(response);
     }
@@ -1171,6 +1251,17 @@ public sealed class StockCardWarehousePatchHttpRequest
             ResetToGlobal);
 }
 
+public sealed class StockCardWarehouseBulkPatchHttpRequest
+{
+    [MaxLength(500)]
+    public int[] WarehouseNos { get; init; } = [];
+
+    public bool ApplyToAllActiveWarehouses { get; init; }
+
+    [Required]
+    public StockCardWarehousePatchHttpRequest Patch { get; init; } = new();
+}
+
 public sealed class WarehouseCardSearchHttpRequest
 {
     [StringLength(100)]
@@ -1650,6 +1741,32 @@ public sealed class CustomerAddressPatchHttpRequest
 
 public sealed class StockSalesPriceUpsertHttpRequest
 {
+    [Range(1, int.MaxValue)]
+    public int PriceListNo { get; init; } = 1;
+
+    [Range(0, int.MaxValue)]
+    public int PaymentPlanNo { get; init; }
+
+    [Range(1, 4)]
+    public byte UnitPointer { get; init; } = 1;
+
+    [Range(0.000001, double.MaxValue)]
+    public double Price { get; init; }
+
+    [Range(0, byte.MaxValue)]
+    public byte CurrencyType { get; init; }
+
+    [Range(0, byte.MaxValue)]
+    public byte ChangeReason { get; init; } = 4;
+}
+
+public sealed class StockSalesPriceBulkUpsertHttpRequest
+{
+    [MaxLength(500)]
+    public int[] WarehouseNos { get; init; } = [];
+
+    public bool ApplyToAllActiveWarehouses { get; init; }
+
     [Range(1, int.MaxValue)]
     public int PriceListNo { get; init; } = 1;
 

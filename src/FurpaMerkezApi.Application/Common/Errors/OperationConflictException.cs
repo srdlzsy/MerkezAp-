@@ -22,6 +22,7 @@ public static class OperationConflictErrorCodes
     public const string MikroDocumentIncomplete = "MIKRO_DOCUMENT_INCOMPLETE";
     public const string MikroDocumentContentMismatch = "MIKRO_DOCUMENT_CONTENT_MISMATCH";
     public const string MikroDocumentIdentityConflict = "MIKRO_DOCUMENT_IDENTITY_CONFLICT";
+    public const string MikroDocumentChanged = "MIKRO_DOCUMENT_CHANGED";
     public const string MikroPosDocumentSequenceConflict = "MIKRO_POS_DOCUMENT_SEQUENCE_CONFLICT";
     public const string PosLegacyVatRateConflict = "POS_LEGACY_VAT_RATE_CONFLICT";
     public const string MikroOfficialDocumentAlreadyReceived = "MIKRO_OFFICIAL_DOCUMENT_ALREADY_RECEIVED";

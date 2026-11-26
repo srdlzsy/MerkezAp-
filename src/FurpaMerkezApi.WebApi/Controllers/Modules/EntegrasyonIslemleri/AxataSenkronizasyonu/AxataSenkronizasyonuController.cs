@@ -2367,7 +2367,7 @@ public sealed class AxataSynchronizationManualDocumentCandidatesHttpRequest
     [Range(0, int.MaxValue)]
     public int? Skip { get; init; }
 
-    [Range(1, 100)]
+    [Range(1, 500)]
     public int? Take { get; init; }
 }
 

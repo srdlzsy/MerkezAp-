@@ -27,6 +27,10 @@ public interface IMikroDocumentEditingService
         UpdateStockCardWarehouseSettingsRequest request,
         CancellationToken cancellationToken);
 
+    Task<StockCardWarehouseBulkUpdateResponse> BulkUpdateStockCardWarehouseSettingsAsync(
+        BulkUpdateStockCardWarehouseSettingsRequest request,
+        CancellationToken cancellationToken);
+
     Task<MikroDocumentDeleteResponse> DeleteStockCardWarehouseSettingsAsync(
         DeleteStockCardWarehouseSettingsRequest request,
         CancellationToken cancellationToken);
@@ -70,6 +74,10 @@ public interface IMikroDocumentEditingService
 
     Task<StockSalesPriceUpsertResponse> UpsertStockSalesPriceAsync(
         UpsertStockSalesPriceRequest request,
+        CancellationToken cancellationToken);
+
+    Task<StockSalesPriceBulkUpsertResponse> BulkUpsertStockSalesPriceAsync(
+        BulkUpsertStockSalesPriceRequest request,
         CancellationToken cancellationToken);
 
     Task<MikroDocumentDeleteResponse> DeleteStockSalesPriceAsync(
