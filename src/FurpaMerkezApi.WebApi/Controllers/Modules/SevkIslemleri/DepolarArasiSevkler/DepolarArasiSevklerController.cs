@@ -383,7 +383,8 @@ public sealed class DepolarArasiSevklerController(
                         line.CustomerResponsibilityCenter,
                         line.ProductResponsibilityCenter,
                         line.GreenGrocerReferenceOrderLineGuid,
-                        line.GreenGrocerOverDeliveryConfirmed))
+                        line.GreenGrocerOverDeliveryConfirmed,
+                        line.GreenGrocerActualCaseCount))
                     .ToArray(),
                 ClientRequestId: request.ClientRequestId,
                 RequestedByUserId: User.GetRequiredUserId(),
@@ -503,6 +504,9 @@ public sealed class CreateInterWarehouseShipmentLineHttpRequest
     public Guid? GreenGrocerReferenceOrderLineGuid { get; init; }
 
     public bool GreenGrocerOverDeliveryConfirmed { get; init; }
+
+    [Range(0.000001, CreateQuantityLimits.Maximum)]
+    public double? GreenGrocerActualCaseCount { get; init; }
 
     [Range(0, double.MaxValue)]
     public double UnitPrice { get; init; }

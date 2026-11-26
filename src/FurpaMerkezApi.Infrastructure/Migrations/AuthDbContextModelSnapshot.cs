@@ -6487,6 +6487,10 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                         .HasColumnType("bit")
                         .HasColumnName("allow_order_linking");
 
+                    b.Property<double?>("ApprovedKgPerCase")
+                        .HasColumnType("float")
+                        .HasColumnName("approved_kg_per_case");
+
                     b.Property<int?>("AverageCaseCount")
                         .HasColumnType("int")
                         .HasColumnName("average_case_count");
@@ -6504,6 +6508,15 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                         .HasMaxLength(60)
                         .HasColumnType("nvarchar(60)")
                         .HasColumnName("average_source");
+
+                    b.Property<int?>("AverageWindowDaysUsed")
+                        .HasColumnType("int")
+                        .HasColumnName("average_window_days_used");
+
+                    b.Property<string>("CalculationTier")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasColumnName("calculation_tier");
 
                     b.Property<double?>("CoefficientOfVariation")
                         .HasColumnType("float")
@@ -6539,6 +6552,10 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                         .HasColumnType("nvarchar(20)")
                         .HasColumnName("document_serie");
 
+                    b.Property<double?>("DriftPercent")
+                        .HasColumnType("float")
+                        .HasColumnName("drift_percent");
+
                     b.Property<double>("EstimatedQuantity")
                         .HasColumnType("float")
                         .HasColumnName("estimated_quantity");
@@ -6553,6 +6570,16 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                         .HasColumnType("float")
                         .HasColumnName("input_quantity");
 
+                    b.Property<int?>("LabelAgeDays")
+                        .HasColumnType("int")
+                        .HasColumnName("label_age_days");
+
+                    b.Property<bool>("ManualApprovalConfirmed")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false)
+                        .HasColumnName("manual_approval_confirmed");
+
                     b.Property<string>("MicroUnit")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -6566,6 +6593,10 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                     b.Property<double>("OverDeliveryTolerancePercent")
                         .HasColumnType("float")
                         .HasColumnName("over_delivery_tolerance_percent");
+
+                    b.Property<double?>("PriorAverageKgPerCase")
+                        .HasColumnType("float")
+                        .HasColumnName("prior_average_kg_per_case");
 
                     b.Property<bool>("RequiresManualApproval")
                         .HasColumnType("bit")
@@ -6750,6 +6781,10 @@ namespace FurpaMerkezApi.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("id");
+
+                    b.Property<double?>("ActualCaseCount")
+                        .HasColumnType("float")
+                        .HasColumnName("actual_case_count");
 
                     b.Property<double>("ActualQuantity")
                         .HasColumnType("float")

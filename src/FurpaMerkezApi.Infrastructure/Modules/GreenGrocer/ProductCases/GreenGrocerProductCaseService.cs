@@ -1,9 +1,7 @@
-using System.Data;
-using System.Data.Common;
 using FurpaMerkezApi.Application.Abstractions.Time;
 using FurpaMerkezApi.Application.Modules.GreenGrocer.ProductCases;
-using FurpaMerkezApi.Infrastructure.Common;
 using FurpaMerkezApi.Domain.Entities;
+using FurpaMerkezApi.Infrastructure.Common;
 using FurpaMerkezApi.Infrastructure.Persistence;
 using FurpaMerkezApi.Infrastructure.Persistence.Furpa;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
@@ -17,9 +15,12 @@ public sealed class GreenGrocerProductCaseService(
     MikroDbContext mikroDbContext,
     FurpaDbContext furpaDbContext,
     IClock clock,
-    IOptionsMonitor<GreenGrocerProductCaseOptions> options)
+    IOptionsMonitor<GreenGrocerProductCaseOptions> options,
+    IGreenGrocerLabelStatsReader? labelStatsReader = null)
     : IGreenGrocerProductCaseService
 {
+    private readonly IGreenGrocerLabelStatsReader _labelStatsReader =
+        labelStatsReader ?? new SqlGreenGrocerLabelStatsReader(furpaDbContext);
     private const int DefaultGreenGrocerWarehouseNo = 56;
     private const int DefaultTake = 100;
     private const int MaxTake = 500;
@@ -54,6 +55,11 @@ public sealed class GreenGrocerProductCaseService(
         CancellationToken cancellationToken)
     {
         EnsureEnabled();
+
+        if (!options.CurrentValue.AuthDbProfileStorageEnabled)
+        {
+            return [];
+        }
 
         var take = NormalizeTake(request.Take);
         var search = NormalizeSearch(request.Search);
@@ -94,6 +100,7 @@ public sealed class GreenGrocerProductCaseService(
         CancellationToken cancellationToken)
     {
         EnsureEnabled();
+        EnsureProfileStorageEnabled();
 
         var normalizedStockCode = NormalizeStockCode(stockCode);
         var profile = await authDbContext.GreenGrocerProductCaseProfiles
@@ -113,6 +120,7 @@ public sealed class GreenGrocerProductCaseService(
         CancellationToken cancellationToken)
     {
         EnsureEnabled();
+        EnsureProfileStorageEnabled();
 
         var normalizedStockCode = NormalizeStockCode(stockCode);
         var inputMode = GetCanonicalMode(request.InputMode, ValidInputModes);
@@ -178,6 +186,7 @@ public sealed class GreenGrocerProductCaseService(
         CancellationToken cancellationToken)
     {
         EnsureEnabled();
+        EnsureProfileStorageEnabled();
 
         var normalizedStockCode = NormalizeStockCode(stockCode);
         var profile = await authDbContext.GreenGrocerProductCaseProfiles
@@ -227,9 +236,11 @@ public sealed class GreenGrocerProductCaseService(
         var stockCode = NormalizeStockCode(request.StockCode);
         var stockInfo = await GetStockInfoAsync(stockCode, cancellationToken);
         var orderDate = (request.OrderDate ?? DateTime.Today).Date;
-        var profile = await authDbContext.GreenGrocerProductCaseProfiles
-            .AsNoTracking()
-            .FirstOrDefaultAsync(item => item.StockCode == stockCode && item.IsActive, cancellationToken);
+        var profile = options.CurrentValue.AuthDbProfileStorageEnabled
+            ? await authDbContext.GreenGrocerProductCaseProfiles
+                .AsNoTracking()
+                .FirstOrDefaultAsync(item => item.StockCode == stockCode && item.IsActive, cancellationToken)
+            : null;
 
         var warnings = new List<string>();
         var errors = new List<string>();
@@ -269,6 +280,15 @@ public sealed class GreenGrocerProductCaseService(
         }
     }
 
+    private void EnsureProfileStorageEnabled()
+    {
+        if (!options.CurrentValue.AuthDbProfileStorageEnabled)
+        {
+            throw new InvalidOperationException(
+                "Green grocer product case profile storage is disabled by configuration.");
+        }
+    }
+
     private async Task<GreenGrocerProductCaseResolutionDto> ResolveWithProfileAsync(
         StockInfo stockInfo,
         GreenGrocerProductCaseProfile profile,
@@ -280,26 +300,29 @@ public sealed class GreenGrocerProductCaseService(
     {
         var inputMode = NormalizeMode(profile.InputMode);
         var conversionMode = NormalizeMode(profile.ConversionMode);
-        var stats = conversionMode == GreenGrocerProductCaseModes.ConversionLabelAverageKgPerCase
-            ? await GetLabelAverageAsync(stockInfo.StockCode, orderDate, profile.AverageWindowDays, cancellationToken)
-            : LabelAverage.Empty;
+        var labelCalculation = conversionMode == GreenGrocerProductCaseModes.ConversionLabelAverageKgPerCase
+            ? await EvaluateLabelAverageAsync(
+                stockInfo.StockCode,
+                orderDate,
+                new GreenGrocerCaseCalculationSettings(
+                    FullWindowDays: Math.Max(profile.AverageWindowDays, 7),
+                    MaxCoefficientOfVariation: profile.MaxCoefficientOfVariation,
+                    MinExpectedKgPerCase: profile.MinExpectedKgPerCase,
+                    MaxExpectedKgPerCase: profile.MaxExpectedKgPerCase),
+                cancellationToken)
+            : null;
 
         var result = conversionMode switch
         {
             GreenGrocerProductCaseModes.ConversionLabelAverageKgPerCase =>
-                ResolveLabelAverage(
+                BuildLabelAverageResolution(
                     stockInfo,
                     inputQuantity,
                     inputMode,
                     conversionMode,
                     profile.AllowOrderLinking,
                     profile.RequiresManualApproval,
-                    stats,
-                    profile.MinAverageRecordCount,
-                    profile.MinAverageCaseCount,
-                    profile.MaxCoefficientOfVariation,
-                    profile.MinExpectedKgPerCase,
-                    profile.MaxExpectedKgPerCase,
+                    labelCalculation!,
                     warnings,
                     errors),
 
@@ -408,25 +431,20 @@ public sealed class GreenGrocerProductCaseService(
 
         if (IsUnit(stockInfo.Unit1, "KG"))
         {
-            var stats = await GetLabelAverageAsync(
+            var calculation = await EvaluateLabelAverageAsync(
                 stockInfo.StockCode,
                 orderDate,
-                DefaultAverageWindowDays,
+                GreenGrocerCaseCalculationSettings.Default,
                 cancellationToken);
 
-            return ResolveLabelAverage(
+            return BuildLabelAverageResolution(
                 stockInfo,
                 inputQuantity,
                 GreenGrocerProductCaseModes.InputCase,
                 GreenGrocerProductCaseModes.ConversionLabelAverageKgPerCase,
                 true,
                 false,
-                stats,
-                DefaultMinAverageRecordCount,
-                DefaultMinAverageCaseCount,
-                DefaultMaxCoefficientOfVariation,
-                null,
-                null,
+                calculation,
                 warnings,
                 errors);
         }
@@ -452,71 +470,70 @@ public sealed class GreenGrocerProductCaseService(
             false);
     }
 
-    private GreenGrocerProductCaseResolutionDto ResolveLabelAverage(
+    private async Task<GreenGrocerCaseCalculationResult> EvaluateLabelAverageAsync(
+        string stockCode,
+        DateTime orderDate,
+        GreenGrocerCaseCalculationSettings settings,
+        CancellationToken cancellationToken)
+    {
+        var observations = await _labelStatsReader.ReadObservationsAsync(
+            stockCode,
+            orderDate,
+            Math.Max(settings.FullWindowDays, DefaultAverageWindowDays),
+            cancellationToken);
+
+        return GreenGrocerCaseAverageCalculator.Evaluate(observations, orderDate, settings);
+    }
+
+    private GreenGrocerProductCaseResolutionDto BuildLabelAverageResolution(
         StockInfo stockInfo,
         double inputQuantity,
         string inputMode,
         string conversionMode,
         bool allowOrderLinking,
-        bool requiresManualApproval,
-        LabelAverage stats,
-        int minRecordCount,
-        int minCaseCount,
-        double maxCoefficientOfVariation,
-        double? minExpectedKgPerCase,
-        double? maxExpectedKgPerCase,
+        bool profileRequiresManualApproval,
+        GreenGrocerCaseCalculationResult calculation,
         List<string> warnings,
         List<string> errors)
     {
-        if (stats.AverageKgPerCase is null or <= 0)
+        warnings.AddRange(calculation.Warnings);
+
+        var requiresManualApproval = profileRequiresManualApproval || calculation.RequiresManualApproval;
+
+        if (!calculation.IsUsable || calculation.AverageKgPerCase is null or <= 0d)
         {
-            errors.Add("Urun icin guncel kasa kg ortalamasi yok; manuel profil tanimlanmali.");
+            warnings.AddRange(calculation.Errors);
+            warnings.Add(
+                "Guncel kasa KG ortalamasi hesaplanamadi; girilen miktar Mikro ana biriminde dogrudan kullanildi.");
+
             return CreateResolution(
                 stockInfo,
                 inputQuantity,
                 inputMode,
-                GreenGrocerProductCaseModes.ConversionManualOnly,
+                GreenGrocerProductCaseModes.ConversionDirectQuantity,
                 "KG",
-                0,
+                inputQuantity,
                 null,
                 null,
                 GreenGrocerProductCaseModes.AverageSourceNone,
-                stats.RecordCount,
-                stats.CaseCount,
-                stats.CoefficientOfVariation,
-                stats.LatestLabelDate,
-                GreenGrocerProductCaseModes.ConfidenceBlocked,
-                true,
+                calculation.RecordCount,
+                calculation.CaseCount,
+                calculation.CoefficientOfVariation,
+                calculation.LatestLabelDate,
+                GreenGrocerProductCaseModes.ConfidenceLow,
                 false,
-                false);
+                false,
+                true,
+                calculation.CalculationTier,
+                calculation.AverageWindowDaysUsed,
+                calculation.LabelAgeDays,
+                calculation.PriorAverageKgPerCase,
+                calculation.DriftPercent,
+                calculation.DriftDetected,
+                calculation.AlternativeAverageKgPerCase);
         }
 
-        var confidence = GreenGrocerProductCaseModes.ConfidenceHigh;
-
-        if (stats.RecordCount < minRecordCount || stats.CaseCount < minCaseCount)
-        {
-            confidence = GreenGrocerProductCaseModes.ConfidenceMedium;
-            warnings.Add("Kasa kg ortalamasi az ornekle hesaplandi; manuel kontrol onerilir.");
-        }
-
-        if (stats.CoefficientOfVariation.HasValue &&
-            stats.CoefficientOfVariation.Value > maxCoefficientOfVariation)
-        {
-            confidence = GreenGrocerProductCaseModes.ConfidenceMedium;
-            warnings.Add("Kasa kg ortalamasi degisken; sevkte toleransli takip edilmelidir.");
-        }
-
-        if (minExpectedKgPerCase.HasValue && stats.AverageKgPerCase.Value < minExpectedKgPerCase.Value)
-        {
-            confidence = GreenGrocerProductCaseModes.ConfidenceMedium;
-            warnings.Add("Ortalama kg profil minimum beklentisinin altinda.");
-        }
-
-        if (maxExpectedKgPerCase.HasValue && stats.AverageKgPerCase.Value > maxExpectedKgPerCase.Value)
-        {
-            confidence = GreenGrocerProductCaseModes.ConfidenceMedium;
-            warnings.Add("Ortalama kg profil maksimum beklentisinin ustunde.");
-        }
+        errors.AddRange(calculation.Errors);
 
         return CreateResolution(
             stockInfo,
@@ -524,18 +541,25 @@ public sealed class GreenGrocerProductCaseService(
             inputMode,
             conversionMode,
             "KG",
-            inputQuantity * stats.AverageKgPerCase.Value,
-            stats.AverageKgPerCase,
+            inputQuantity * calculation.AverageKgPerCase.Value,
+            calculation.AverageKgPerCase,
             null,
             GreenGrocerProductCaseModes.AverageSourceLabelHistory,
-            stats.RecordCount,
-            stats.CaseCount,
-            stats.CoefficientOfVariation,
-            stats.LatestLabelDate,
-            confidence,
+            calculation.RecordCount,
+            calculation.CaseCount,
+            calculation.CoefficientOfVariation,
+            calculation.LatestLabelDate,
+            calculation.Confidence,
             requiresManualApproval,
             allowOrderLinking,
-            true);
+            true,
+            calculation.CalculationTier,
+            calculation.AverageWindowDaysUsed,
+            calculation.LabelAgeDays,
+            calculation.PriorAverageKgPerCase,
+            calculation.DriftPercent,
+            calculation.DriftDetected,
+            calculation.AlternativeAverageKgPerCase);
     }
 
     private GreenGrocerProductCaseResolutionDto ResolveManualKg(
@@ -702,7 +726,14 @@ public sealed class GreenGrocerProductCaseService(
         string confidence,
         bool requiresManualApproval,
         bool isOrderLinkable,
-        bool isUsable) =>
+        bool isUsable,
+        string? calculationTier = null,
+        int? averageWindowDaysUsed = null,
+        int? labelAgeDays = null,
+        double? priorAverageKgPerCase = null,
+        double? driftPercent = null,
+        bool driftDetected = false,
+        double? alternativeAverageKgPerCase = null) =>
         new(
             stockInfo.StockCode,
             stockInfo.StockName,
@@ -724,13 +755,22 @@ public sealed class GreenGrocerProductCaseService(
             RoundOrNull(coefficientOfVariation),
             latestLabelDate,
             confidence,
-            requiresManualApproval,
-            isOrderLinkable && options.CurrentValue.OrderLinkingEnabled,
+            requiresManualApproval && options.CurrentValue.RequireOrderUserManualApproval,
+            isOrderLinkable &&
+            options.CurrentValue.OrderLinkingEnabled &&
+            options.CurrentValue.AuthDbTrackingEnabled,
             ResolveDefaultOverDeliveryTolerancePercent(),
             ResolveSevereOverDeliveryMultiplier(),
             isUsable,
             [],
-            []);
+            [],
+            calculationTier,
+            averageWindowDaysUsed,
+            labelAgeDays,
+            RoundOrNull(priorAverageKgPerCase),
+            RoundPercentOrNull(driftPercent),
+            driftDetected,
+            RoundOrNull(alternativeAverageKgPerCase));
 
     private async Task<StockInfo> GetStockInfoAsync(string stockCode, CancellationToken cancellationToken)
     {
@@ -784,101 +824,6 @@ public sealed class GreenGrocerProductCaseService(
             .ToListAsync(cancellationToken);
 
         return stocks.ToDictionary(item => item.StockCode, StringComparer.OrdinalIgnoreCase);
-    }
-
-    private async Task<LabelAverage> GetLabelAverageAsync(
-        string stockCode,
-        DateTime orderDate,
-        int windowDays,
-        CancellationToken cancellationToken)
-    {
-        var connection = furpaDbContext.Database.GetDbConnection();
-        var wasClosed = connection.State == ConnectionState.Closed;
-
-        if (wasClosed)
-        {
-            await connection.OpenAsync(cancellationToken);
-        }
-
-        try
-        {
-            await using var command = connection.CreateCommand();
-            command.CommandText = """
-                SET NOCOUNT ON;
-
-                DECLARE @StartDate date = DATEADD(day, -1 * @WindowDays, @OrderDate);
-                DECLARE @EndDateExclusive date = DATEADD(day, 1, @OrderDate);
-
-                SELECT
-                    COUNT(*) AS RecordCount,
-                    SUM(CAST(ISNULL(Kasa_Sayisi, 0) AS float)) AS CaseCount,
-                    AVG(CAST(ISNULL([Alınan_Net_Miktar], 0) AS float) / NULLIF(CAST(Kasa_Sayisi AS float), 0)) AS AverageKgPerCase,
-                    STDEV(CAST(ISNULL([Alınan_Net_Miktar], 0) AS float) / NULLIF(CAST(Kasa_Sayisi AS float), 0)) AS StandardDeviation,
-                    MAX(Olusturma_Tarihi) AS LatestLabelDate
-                FROM dbo.Manav_Depo_Mal_Kabul_Etiket WITH (NOLOCK)
-                WHERE Stok_Kod = @StockCode
-                  AND Olusturma_Tarihi >= @StartDate
-                  AND Olusturma_Tarihi < @EndDateExclusive
-                  AND ISNULL(Kasa_Sayisi, 0) > 0
-                  AND ISNULL([Alınan_Net_Miktar], 0) > 0;
-                """;
-            AddParameter(command, "@StockCode", stockCode);
-            AddParameter(command, "@OrderDate", orderDate.Date);
-            AddParameter(command, "@WindowDays", windowDays);
-
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-
-            if (!await reader.ReadAsync(cancellationToken))
-            {
-                return LabelAverage.Empty;
-            }
-
-            var recordCount = GetInt(reader, "RecordCount");
-            var caseCount = (int)Math.Round(GetDouble(reader, "CaseCount") ?? 0d, MidpointRounding.AwayFromZero);
-            var average = GetDouble(reader, "AverageKgPerCase");
-            var standardDeviation = GetDouble(reader, "StandardDeviation") ?? 0d;
-            var latestLabelDate = GetDateTime(reader, "LatestLabelDate");
-
-            return new LabelAverage(
-                recordCount,
-                caseCount,
-                average,
-                average is > 0 ? standardDeviation / average.Value : null,
-                latestLabelDate);
-        }
-        finally
-        {
-            if (wasClosed)
-            {
-                await connection.CloseAsync();
-            }
-        }
-    }
-
-    private static void AddParameter(DbCommand command, string name, object? value)
-    {
-        var parameter = command.CreateParameter();
-        parameter.ParameterName = name;
-        parameter.Value = value ?? DBNull.Value;
-        command.Parameters.Add(parameter);
-    }
-
-    private static int GetInt(DbDataReader reader, string name)
-    {
-        var ordinal = reader.GetOrdinal(name);
-        return reader.IsDBNull(ordinal) ? 0 : Convert.ToInt32(reader.GetValue(ordinal));
-    }
-
-    private static double? GetDouble(DbDataReader reader, string name)
-    {
-        var ordinal = reader.GetOrdinal(name);
-        return reader.IsDBNull(ordinal) ? null : Convert.ToDouble(reader.GetValue(ordinal));
-    }
-
-    private static DateTime? GetDateTime(DbDataReader reader, string name)
-    {
-        var ordinal = reader.GetOrdinal(name);
-        return reader.IsDBNull(ordinal) ? null : reader.GetDateTime(ordinal);
     }
 
     private static GreenGrocerProductCaseProfileDto MapProfile(
@@ -1055,6 +1000,9 @@ public sealed class GreenGrocerProductCaseService(
 
     private static double? RoundOrNull(double? value) => value.HasValue ? Round(value.Value) : null;
 
+    private static double? RoundPercentOrNull(double? value) =>
+        value.HasValue ? Math.Round(value.Value, 1, MidpointRounding.AwayFromZero) : null;
+
     private static double GetSecondaryUnitMultiplier(StockInfo stockInfo) =>
         string.IsNullOrWhiteSpace(stockInfo.Unit2)
             ? 0d
@@ -1069,14 +1017,4 @@ public sealed class GreenGrocerProductCaseService(
         double Unit2Factor,
         bool IsPassive,
         bool IsDelisted);
-
-    private sealed record LabelAverage(
-        int RecordCount,
-        int CaseCount,
-        double? AverageKgPerCase,
-        double? CoefficientOfVariation,
-        DateTime? LatestLabelDate)
-    {
-        public static LabelAverage Empty { get; } = new(0, 0, null, null, null);
-    }
 }

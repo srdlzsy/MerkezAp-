@@ -166,7 +166,13 @@ public sealed record GreenGrocerReportCaseInfoDto(
     string Confidence,
     int? AverageRecordCount,
     int? AverageCaseCount,
-    double? CoefficientOfVariation);
+    double? CoefficientOfVariation,
+    string? CalculationTier = null,
+    bool RequiresManualApproval = false,
+    bool ManualApprovalConfirmed = false,
+    double? ActualShippedQuantity = null,
+    double? ActualShippedCaseCount = null,
+    string? ShipmentStatus = null);
 
 public sealed record GreenGrocerLazyBranchDto(
     int BranchNo,

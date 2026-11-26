@@ -37,4 +37,11 @@ public sealed record WarehouseOrderLineGreenGrocerCaseDto(
     double SevereOverDeliveryMultiplier,
     double? ActualShippedQuantity,
     double? ActualShippedCaseCount,
-    string Status);
+    string Status,
+    string? CalculationTier = null,
+    int? AverageWindowDaysUsed = null,
+    int? LabelAgeDays = null,
+    double? PriorAverageKgPerCase = null,
+    double? DriftPercent = null,
+    bool ManualApprovalConfirmed = false,
+    double? ApprovedKgPerCase = null);

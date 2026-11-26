@@ -31215,10 +31215,13 @@ Enum degerleri JSON sozlesmesinde bulunur.
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
 |---|---|---|---|
+| `authDbProfileStorageEnabled` | boolean | Hayir |  |
+| `authDbTrackingEnabled` | boolean | Hayir |  |
 | `defaultOverDeliveryTolerancePercent` | number (double) | Hayir |  |
 | `enabled` | boolean | Hayir |  |
 | `modelCodes` | string[] | Hayir | nullable |
 | `orderLinkingEnabled` | boolean | Hayir |  |
+| `requireOrderUserManualApproval` | boolean | Hayir |  |
 | `severeOverDeliveryMultiplier` | number (double) | Hayir |  |
 | `sourceWarehouseNo` | integer (int32) | Hayir |  |
 
@@ -31256,24 +31259,31 @@ Enum degerleri JSON sozlesmesinde bulunur.
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
 |---|---|---|---|
+| `alternativeAverageKgPerCase` | number (double) | Hayir | nullable |
 | `averageCaseCount` | integer (int32) | Hayir | nullable |
 | `averageKgPerCase` | number (double) | Hayir | nullable |
 | `averageRecordCount` | integer (int32) | Hayir | nullable |
 | `averageSource` | string | Hayir | nullable |
+| `averageWindowDaysUsed` | integer (int32) | Hayir | nullable |
+| `calculationTier` | string | Hayir | nullable |
 | `coefficientOfVariation` | number (double) | Hayir | nullable |
 | `confidence` | string | Hayir | nullable |
 | `conversionMode` | string | Hayir | nullable |
+| `driftDetected` | boolean | Hayir |  |
+| `driftPercent` | number (double) | Hayir | nullable |
 | `errors` | string[] | Hayir | nullable |
 | `estimatedQuantity` | number (double) | Hayir |  |
 | `inputMode` | string | Hayir | nullable |
 | `inputQuantity` | number (double) | Hayir |  |
 | `isOrderLinkable` | boolean | Hayir |  |
 | `isUsable` | boolean | Hayir |  |
+| `labelAgeDays` | integer (int32) | Hayir | nullable |
 | `latestLabelDate` | string (date-time) | Hayir | nullable |
 | `microUnit` | string | Hayir | nullable |
 | `modelCode` | string | Hayir | nullable |
 | `modelName` | string | Hayir | nullable |
 | `overDeliveryTolerancePercent` | number (double) | Hayir |  |
+| `priorAverageKgPerCase` | number (double) | Hayir | nullable |
 | `requiresManualApproval` | boolean | Hayir |  |
 | `severeOverDeliveryMultiplier` | number (double) | Hayir |  |
 | `stockCode` | string | Hayir | nullable |
@@ -31447,16 +31457,22 @@ Enum degerleri JSON sozlesmesinde bulunur.
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
 |---|---|---|---|
+| `actualShippedCaseCount` | number (double) | Hayir | nullable |
+| `actualShippedQuantity` | number (double) | Hayir | nullable |
 | `averageCaseCount` | integer (int32) | Hayir | nullable |
 | `averageKgPerCase` | number (double) | Hayir | nullable |
 | `averageRecordCount` | integer (int32) | Hayir | nullable |
 | `averageSource` | string | Hayir | nullable |
+| `calculationTier` | string | Hayir | nullable |
 | `coefficientOfVariation` | number (double) | Hayir | nullable |
 | `confidence` | string | Hayir | nullable |
 | `estimatedQuantity` | number (double) | Hayir |  |
 | `inputMode` | string | Hayir | nullable |
 | `inputQuantity` | number (double) | Hayir |  |
+| `manualApprovalConfirmed` | boolean | Hayir |  |
 | `microUnit` | string | Hayir | nullable |
+| `requiresManualApproval` | boolean | Hayir |  |
+| `shipmentStatus` | string | Hayir | nullable |
 | `unitsPerCase` | number (double) | Hayir | nullable |
 
 ### FurpaMerkezApi.Application.Modules.GreenGrocer.Reports.GreenGrocerReportDocumentDto
@@ -35952,18 +35968,25 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `actualShippedCaseCount` | number (double) | Hayir | nullable |
 | `actualShippedQuantity` | number (double) | Hayir | nullable |
 | `allowOrderLinking` | boolean | Hayir |  |
+| `approvedKgPerCase` | number (double) | Hayir | nullable |
 | `averageCaseCount` | integer (int32) | Hayir | nullable |
 | `averageKgPerCase` | number (double) | Hayir | nullable |
 | `averageRecordCount` | integer (int32) | Hayir | nullable |
 | `averageSource` | string | Hayir | nullable |
+| `averageWindowDaysUsed` | integer (int32) | Hayir | nullable |
+| `calculationTier` | string | Hayir | nullable |
 | `coefficientOfVariation` | number (double) | Hayir | nullable |
 | `confidence` | string | Hayir | nullable |
 | `conversionMode` | string | Hayir | nullable |
+| `driftPercent` | number (double) | Hayir | nullable |
 | `estimatedQuantity` | number (double) | Hayir |  |
 | `inputMode` | string | Hayir | nullable |
 | `inputQuantity` | number (double) | Hayir |  |
+| `labelAgeDays` | integer (int32) | Hayir | nullable |
+| `manualApprovalConfirmed` | boolean | Hayir |  |
 | `microUnit` | string | Hayir | nullable |
 | `overDeliveryTolerancePercent` | number (double) | Hayir |  |
+| `priorAverageKgPerCase` | number (double) | Hayir | nullable |
 | `requiresManualApproval` | boolean | Hayir |  |
 | `severeOverDeliveryMultiplier` | number (double) | Hayir |  |
 | `status` | string | Hayir | nullable |
@@ -38582,6 +38605,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 |---|---|---|---|
 | `customerResponsibilityCenter` | string | Hayir | minLength=0; maxLength=25; nullable |
 | `description` | string | Hayir | minLength=0; maxLength=50; nullable |
+| `greenGrocerActualCaseCount` | number (double) | Hayir | max=100000; nullable |
 | `greenGrocerOverDeliveryConfirmed` | boolean | Hayir |  |
 | `greenGrocerReferenceOrderLineGuid` | string (uuid) | Hayir | nullable |
 | `lotNo` | integer (int32) | Hayir | min=0; max=2147483647 |
@@ -38691,17 +38715,28 @@ Enum degerleri JSON sozlesmesinde bulunur.
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
 |---|---|---|---|
+| `allowOrderLinking` | boolean | Hayir |  |
+| `approvedKgPerCase` | number (double) | Hayir | nullable |
 | `averageCaseCount` | integer (int32) | Hayir | min=0; max=2147483647; nullable |
 | `averageKgPerCase` | number (double) | Hayir | nullable |
 | `averageRecordCount` | integer (int32) | Hayir | min=0; max=2147483647; nullable |
 | `averageSource` | string | Evet | minLength=0; maxLength=60 |
+| `averageWindowDaysUsed` | integer (int32) | Hayir | min=1; max=365; nullable |
+| `calculationTier` | string | Hayir | minLength=0; maxLength=10; nullable |
 | `coefficientOfVariation` | number (double) | Hayir | min=0; nullable |
 | `confidence` | string | Evet | minLength=0; maxLength=30 |
 | `conversionMode` | string | Evet | minLength=0; maxLength=60 |
+| `driftPercent` | number (double) | Hayir | nullable |
 | `estimatedQuantity` | number (double) | Hayir | max=100000 |
 | `inputMode` | string | Evet | minLength=0; maxLength=40 |
 | `inputQuantity` | number (double) | Hayir | max=100000 |
+| `labelAgeDays` | integer (int32) | Hayir | min=0; max=3650; nullable |
+| `manualApprovalConfirmed` | boolean | Hayir |  |
 | `microUnit` | string | Evet | minLength=0; maxLength=20 |
+| `overDeliveryTolerancePercent` | number (double) | Hayir | min=0; max=1000; nullable |
+| `priorAverageKgPerCase` | number (double) | Hayir | nullable |
+| `requiresManualApproval` | boolean | Hayir |  |
+| `severeOverDeliveryMultiplier` | number (double) | Hayir | min=1.0001; max=100; nullable |
 | `unitsPerCase` | number (double) | Hayir | nullable |
 
 ### FurpaMerkezApi.WebApi.Controllers.Modules.SiparisIslemleri.VerilenFirmaSiparisleri.ApproveCompanyOrderItemHttpRequest

@@ -1,15 +1,18 @@
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.Common;
+using FurpaMerkezApi.Infrastructure.Modules.GreenGrocer.ProductCases;
 using FurpaMerkezApi.Infrastructure.Persistence;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.SiparisIslemleri.Common;
 
 public sealed class WarehouseOrderDetailQueryExecutor(
     MikroDbContext mikroDbContext,
     AuthDbContext authDbContext,
-    ILogger<WarehouseOrderDetailQueryExecutor> logger)
+    ILogger<WarehouseOrderDetailQueryExecutor> logger,
+    IOptionsMonitor<GreenGrocerProductCaseOptions>? greenGrocerOptions = null)
 {
     private const double QuantityTolerance = 0.000001d;
 
@@ -185,6 +188,11 @@ public sealed class WarehouseOrderDetailQueryExecutor(
         IReadOnlyCollection<Guid> lineGuids,
         CancellationToken cancellationToken)
     {
+        if (greenGrocerOptions?.CurrentValue.AuthDbTrackingEnabled != true)
+        {
+            return new Dictionary<Guid, WarehouseOrderLineGreenGrocerCaseDto>();
+        }
+
         var normalizedLineGuids = lineGuids
             .Where(guid => guid != Guid.Empty)
             .Distinct()
@@ -221,7 +229,14 @@ public sealed class WarehouseOrderDetailQueryExecutor(
                     snapshot.SevereOverDeliveryMultiplier,
                     snapshot.ActualShippedQuantity,
                     snapshot.ActualShippedCaseCount,
-                    snapshot.Status
+                    snapshot.Status,
+                    snapshot.CalculationTier,
+                    snapshot.AverageWindowDaysUsed,
+                    snapshot.LabelAgeDays,
+                    snapshot.PriorAverageKgPerCase,
+                    snapshot.DriftPercent,
+                    snapshot.ManualApprovalConfirmed,
+                    snapshot.ApprovedKgPerCase
                 })
                 .ToListAsync(cancellationToken);
 
@@ -246,7 +261,14 @@ public sealed class WarehouseOrderDetailQueryExecutor(
                     Round(snapshot.SevereOverDeliveryMultiplier),
                     RoundOrNull(snapshot.ActualShippedQuantity),
                     RoundOrNull(snapshot.ActualShippedCaseCount),
-                    snapshot.Status));
+                    snapshot.Status,
+                    snapshot.CalculationTier,
+                    snapshot.AverageWindowDaysUsed,
+                    snapshot.LabelAgeDays,
+                    RoundOrNull(snapshot.PriorAverageKgPerCase),
+                    snapshot.DriftPercent.HasValue ? Math.Round(snapshot.DriftPercent.Value, 1, MidpointRounding.AwayFromZero) : null,
+                    snapshot.ManualApprovalConfirmed,
+                    RoundOrNull(snapshot.ApprovedKgPerCase)));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

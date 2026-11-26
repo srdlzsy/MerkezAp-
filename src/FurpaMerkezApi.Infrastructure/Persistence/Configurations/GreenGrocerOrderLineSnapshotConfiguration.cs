@@ -37,6 +37,13 @@ public sealed class GreenGrocerOrderLineSnapshotConfiguration : IEntityTypeConfi
         builder.Property(snapshot => snapshot.AllowOrderLinking).HasColumnName("allow_order_linking").IsRequired();
         builder.Property(snapshot => snapshot.OverDeliveryTolerancePercent).HasColumnName("over_delivery_tolerance_percent").IsRequired();
         builder.Property(snapshot => snapshot.SevereOverDeliveryMultiplier).HasColumnName("severe_over_delivery_multiplier").IsRequired();
+        builder.Property(snapshot => snapshot.CalculationTier).HasColumnName("calculation_tier").HasMaxLength(10);
+        builder.Property(snapshot => snapshot.AverageWindowDaysUsed).HasColumnName("average_window_days_used");
+        builder.Property(snapshot => snapshot.LabelAgeDays).HasColumnName("label_age_days");
+        builder.Property(snapshot => snapshot.PriorAverageKgPerCase).HasColumnName("prior_average_kg_per_case");
+        builder.Property(snapshot => snapshot.DriftPercent).HasColumnName("drift_percent");
+        builder.Property(snapshot => snapshot.ManualApprovalConfirmed).HasColumnName("manual_approval_confirmed").HasDefaultValue(false).IsRequired();
+        builder.Property(snapshot => snapshot.ApprovedKgPerCase).HasColumnName("approved_kg_per_case");
         builder.Property(snapshot => snapshot.ActualShippedQuantity).HasColumnName("actual_shipped_quantity");
         builder.Property(snapshot => snapshot.ActualShippedCaseCount).HasColumnName("actual_shipped_case_count");
         builder.Property(snapshot => snapshot.Status).HasColumnName("status").HasMaxLength(30).IsRequired();

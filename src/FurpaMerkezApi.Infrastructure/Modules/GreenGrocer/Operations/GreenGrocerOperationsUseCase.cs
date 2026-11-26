@@ -6,6 +6,7 @@ using FurpaMerkezApi.Application.Common.Errors;
 using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
 using FurpaMerkezApi.Application.Modules.GreenGrocer.Operations;
 using FurpaMerkezApi.Infrastructure.Modules.Common;
+using FurpaMerkezApi.Infrastructure.Modules.GreenGrocer.ProductCases;
 using FurpaMerkezApi.Infrastructure.OfflineSync;
 using FurpaMerkezApi.Infrastructure.Persistence;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
@@ -25,7 +26,8 @@ public sealed class GreenGrocerOperationsUseCase(
     IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
     MikroApiClient mikroApiClient,
     MobileOfflineSyncService mobileOfflineSyncService,
-    ILogger<GreenGrocerOperationsUseCase> logger)
+    ILogger<GreenGrocerOperationsUseCase> logger,
+    IOptionsMonitor<GreenGrocerProductCaseOptions>? greenGrocerOptions = null)
     : IGreenGrocerOperationsUseCase
 {
     private const int DefaultWarehouseNo = 56;
@@ -739,6 +741,11 @@ public sealed class GreenGrocerOperationsUseCase(
         IReadOnlyCollection<string> stockCodes,
         CancellationToken cancellationToken)
     {
+        if (greenGrocerOptions?.CurrentValue.AuthDbTrackingEnabled != true)
+        {
+            return new Dictionary<string, GreenGrocerOperationOrderCaseInfo>(StringComparer.OrdinalIgnoreCase);
+        }
+
         var normalizedStockCodes = stockCodes
             .Where(code => !string.IsNullOrWhiteSpace(code))
             .Distinct(StringComparer.OrdinalIgnoreCase)

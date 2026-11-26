@@ -25,6 +25,12 @@ public static class GreenGrocerProductCaseModes
     public const string ConfidenceMedium = "Medium";
     public const string ConfidenceLow = "Low";
     public const string ConfidenceBlocked = "Blocked";
+
+    public const string Tier1 = "T1";
+    public const string Tier2 = "T2";
+    public const string Tier3 = "T3";
+    public const string Tier4a = "T4a";
+    public const string Tier4b = "T4b";
 }
 
 public sealed record GreenGrocerProductCaseProfileListRequest(
@@ -110,11 +116,21 @@ public sealed record GreenGrocerProductCaseResolutionDto(
     double SevereOverDeliveryMultiplier,
     bool IsUsable,
     IReadOnlyCollection<string> Warnings,
-    IReadOnlyCollection<string> Errors);
+    IReadOnlyCollection<string> Errors,
+    string? CalculationTier = null,
+    int? AverageWindowDaysUsed = null,
+    int? LabelAgeDays = null,
+    double? PriorAverageKgPerCase = null,
+    double? DriftPercent = null,
+    bool DriftDetected = false,
+    double? AlternativeAverageKgPerCase = null);
 
 public sealed record GreenGrocerProductCaseCapabilitiesDto(
     bool Enabled,
     bool OrderLinkingEnabled,
+    bool RequireOrderUserManualApproval,
+    bool AuthDbProfileStorageEnabled,
+    bool AuthDbTrackingEnabled,
     int SourceWarehouseNo,
     IReadOnlyCollection<string> ModelCodes,
     double DefaultOverDeliveryTolerancePercent,

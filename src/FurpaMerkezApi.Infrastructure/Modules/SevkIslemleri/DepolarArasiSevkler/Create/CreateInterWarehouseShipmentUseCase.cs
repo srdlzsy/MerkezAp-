@@ -1612,7 +1612,9 @@ public sealed class CreateInterWarehouseShipmentUseCase(
     private bool IsGreenGrocerOrderLinkingEnabled()
     {
         var currentOptions = greenGrocerProductCaseOptions.CurrentValue;
-        return currentOptions.Enabled && currentOptions.OrderLinkingEnabled;
+        return currentOptions.Enabled &&
+               currentOptions.OrderLinkingEnabled &&
+               currentOptions.AuthDbTrackingEnabled;
     }
 
     private int ResolveGreenGrocerSourceWarehouseNo()
@@ -1808,11 +1810,12 @@ public sealed class CreateInterWarehouseShipmentUseCase(
         CancellationToken cancellationToken)
     {
         if (!greenGrocerProductCaseOptions.CurrentValue.Enabled ||
+            !greenGrocerProductCaseOptions.CurrentValue.AuthDbTrackingEnabled ||
             !GreenGrocerShipmentLineNormalizer.IsGreenGrocerSourceWarehouse(
                 request.SourceWarehouseNo,
                 ResolveGreenGrocerSourceWarehouseNo()))
         {
-            return request;
+            return DetachGreenGrocerReferences(request);
         }
 
         var candidateGuids = request.Lines
@@ -1872,6 +1875,11 @@ public sealed class CreateInterWarehouseShipmentUseCase(
         CreateInterWarehouseShipmentRequest request,
         CancellationToken cancellationToken)
     {
+        if (!greenGrocerProductCaseOptions.CurrentValue.AuthDbTrackingEnabled)
+        {
+            return;
+        }
+
         var referencedLines = request.Lines
             .Where(line => line.GreenGrocerReferenceOrderLineGuid.HasValue)
             .GroupBy(line => line.GreenGrocerReferenceOrderLineGuid!.Value)
@@ -1982,6 +1990,11 @@ public sealed class CreateInterWarehouseShipmentUseCase(
         CreateInterWarehouseShipmentRequest request,
         CreateInterWarehouseShipmentResponse response)
     {
+        if (!greenGrocerProductCaseOptions.CurrentValue.AuthDbTrackingEnabled)
+        {
+            return;
+        }
+
         var referencedLines = request.Lines
             .Where(line => line.GreenGrocerReferenceOrderLineGuid.HasValue)
             .GroupBy(line => line.GreenGrocerReferenceOrderLineGuid!.Value)
@@ -2042,6 +2055,9 @@ public sealed class CreateInterWarehouseShipmentUseCase(
                 continue;
             }
 
+            var actualCaseCountForShipment = SumCompleteGreenGrocerCaseCount(
+                group.Select(line => line.GreenGrocerActualCaseCount));
+
             await authDbContext.GreenGrocerShipmentLineRecords.AddAsync(
                 new GreenGrocerShipmentLineRecord(
                     Guid.NewGuid(),
@@ -2051,24 +2067,35 @@ public sealed class CreateInterWarehouseShipmentUseCase(
                     response.DocumentSerie,
                     response.DocumentOrderNo,
                     group.Sum(line => line.Quantity),
-                    createdAtUtc),
+                    createdAtUtc,
+                    actualCaseCountForShipment),
                 cancellationToken);
         }
 
         await authDbContext.SaveChangesAsync(cancellationToken);
 
         var snapshotIds = snapshots.Values.Select(snapshot => snapshot.Id).ToArray();
-        var actualQuantities = await authDbContext.GreenGrocerShipmentLineRecords
+        var shipmentTotals = await authDbContext.GreenGrocerShipmentLineRecords
             .AsNoTracking()
             .Where(record => snapshotIds.Contains(record.OrderLineSnapshotId))
             .GroupBy(record => record.OrderLineSnapshotId)
-            .Select(group => new { SnapshotId = group.Key, ActualQuantity = group.Sum(item => item.ActualQuantity) })
-            .ToDictionaryAsync(item => item.SnapshotId, item => item.ActualQuantity, cancellationToken);
+            .Select(group => new
+            {
+                SnapshotId = group.Key,
+                ActualQuantity = group.Sum(item => item.ActualQuantity),
+                RecordCount = group.Count(),
+                MissingCaseCount = group.Count(item => !item.ActualCaseCount.HasValue),
+                ActualCaseCount = group.Sum(item => item.ActualCaseCount ?? 0d)
+            })
+            .ToDictionaryAsync(item => item.SnapshotId, cancellationToken);
 
         foreach (var snapshot in snapshots.Values)
         {
-            var actualQuantity = actualQuantities.GetValueOrDefault(snapshot.Id);
-            var actualCaseCount = ResolveActualCaseCount(snapshot, actualQuantity);
+            var hasTotals = shipmentTotals.TryGetValue(snapshot.Id, out var totals);
+            var actualQuantity = hasTotals ? totals!.ActualQuantity : 0d;
+            double? actualCaseCount = hasTotals && totals!.RecordCount > 0 && totals.MissingCaseCount == 0
+                ? Math.Round(totals.ActualCaseCount, 3, MidpointRounding.AwayFromZero)
+                : null;
             snapshot.RecordShipment(
                 actualQuantity,
                 actualCaseCount,
@@ -2078,23 +2105,6 @@ public sealed class CreateInterWarehouseShipmentUseCase(
 
         await authDbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-    }
-
-    private static double? ResolveActualCaseCount(
-        GreenGrocerOrderLineSnapshot snapshot,
-        double actualQuantity)
-    {
-        if (snapshot.EstimatedQuantity <= 0d ||
-            (!string.Equals(snapshot.InputMode, "Case", StringComparison.OrdinalIgnoreCase) &&
-             !string.Equals(snapshot.InputMode, "Pack", StringComparison.OrdinalIgnoreCase)))
-        {
-            return null;
-        }
-
-        return Math.Round(
-            actualQuantity * snapshot.InputQuantity / snapshot.EstimatedQuantity,
-            3,
-            MidpointRounding.AwayFromZero);
     }
 
     internal static GreenGrocerShipmentSeverity EvaluateGreenGrocerShipmentSeverity(
@@ -2113,6 +2123,20 @@ public sealed class CreateInterWarehouseShipmentUseCase(
         return actualQuantity > warningLimit
             ? GreenGrocerShipmentSeverity.ConfirmationRequired
             : GreenGrocerShipmentSeverity.Normal;
+    }
+
+    internal static double? SumCompleteGreenGrocerCaseCount(IEnumerable<double?> caseCounts)
+    {
+        var values = caseCounts.ToArray();
+        if (values.Length == 0 || values.Any(value => !value.HasValue || value.Value <= 0d))
+        {
+            return null;
+        }
+
+        return Math.Round(
+            values.Sum(value => value!.Value),
+            3,
+            MidpointRounding.AwayFromZero);
     }
 
     private static bool ShouldUpdateLinkedOrderDeliveredQuantities(
@@ -2391,6 +2415,16 @@ public sealed class CreateInterWarehouseShipmentUseCase(
             if (line.LotNo < 0)
             {
                 throw new ArgumentException("Line lot no can not be negative.", nameof(request.Lines));
+            }
+
+            if (line.GreenGrocerActualCaseCount.HasValue)
+            {
+                if (line.GreenGrocerActualCaseCount.Value <= 0d)
+                {
+                    throw new ArgumentException("Green grocer actual case count must be greater than zero.", nameof(request.Lines));
+                }
+
+                CreateQuantityLimits.EnsureWithinMaximum(line.GreenGrocerActualCaseCount.Value, nameof(request.Lines));
             }
         }
     }

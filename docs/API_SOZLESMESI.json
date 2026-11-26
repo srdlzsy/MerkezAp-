@@ -121796,6 +121796,15 @@
           "orderLinkingEnabled": {
             "type": "boolean"
           },
+          "requireOrderUserManualApproval": {
+            "type": "boolean"
+          },
+          "authDbProfileStorageEnabled": {
+            "type": "boolean"
+          },
+          "authDbTrackingEnabled": {
+            "type": "boolean"
+          },
           "sourceWarehouseNo": {
             "type": "integer",
             "format": "int32"
@@ -122044,6 +122053,38 @@
             "items": {
               "type": "string"
             },
+            "nullable": true
+          },
+          "calculationTier": {
+            "type": "string",
+            "nullable": true
+          },
+          "averageWindowDaysUsed": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "labelAgeDays": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "priorAverageKgPerCase": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "driftPercent": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "driftDetected": {
+            "type": "boolean"
+          },
+          "alternativeAverageKgPerCase": {
+            "type": "number",
+            "format": "double",
             "nullable": true
           }
         },
@@ -122596,6 +122637,30 @@
           "coefficientOfVariation": {
             "type": "number",
             "format": "double",
+            "nullable": true
+          },
+          "calculationTier": {
+            "type": "string",
+            "nullable": true
+          },
+          "requiresManualApproval": {
+            "type": "boolean"
+          },
+          "manualApprovalConfirmed": {
+            "type": "boolean"
+          },
+          "actualShippedQuantity": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "actualShippedCaseCount": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "shipmentStatus": {
+            "type": "string",
             "nullable": true
           }
         },
@@ -136787,6 +136852,38 @@
           "status": {
             "type": "string",
             "nullable": true
+          },
+          "calculationTier": {
+            "type": "string",
+            "nullable": true
+          },
+          "averageWindowDaysUsed": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "labelAgeDays": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "priorAverageKgPerCase": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "driftPercent": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "manualApprovalConfirmed": {
+            "type": "boolean"
+          },
+          "approvedKgPerCase": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -146743,6 +146840,12 @@
           "greenGrocerOverDeliveryConfirmed": {
             "type": "boolean"
           },
+          "greenGrocerActualCaseCount": {
+            "maximum": 100000,
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
           "unitPrice": {
             "minimum": 0,
             "type": "number",
@@ -147259,6 +147362,64 @@
             "maxLength": 30,
             "minLength": 0,
             "type": "string"
+          },
+          "requiresManualApproval": {
+            "type": "boolean"
+          },
+          "allowOrderLinking": {
+            "type": "boolean"
+          },
+          "overDeliveryTolerancePercent": {
+            "maximum": 1000,
+            "minimum": 0,
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "severeOverDeliveryMultiplier": {
+            "maximum": 100,
+            "minimum": 1.0001,
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "calculationTier": {
+            "maxLength": 10,
+            "minLength": 0,
+            "type": "string",
+            "nullable": true
+          },
+          "averageWindowDaysUsed": {
+            "maximum": 365,
+            "minimum": 1,
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "labelAgeDays": {
+            "maximum": 3650,
+            "minimum": 0,
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "priorAverageKgPerCase": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "driftPercent": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "manualApprovalConfirmed": {
+            "type": "boolean"
+          },
+          "approvedKgPerCase": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
           }
         },
         "additionalProperties": false

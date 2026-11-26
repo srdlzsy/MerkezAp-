@@ -15,7 +15,8 @@ public sealed class GreenGrocerShipmentLineRecord
         string documentSerie,
         int documentOrderNo,
         double actualQuantity,
-        DateTime createdAtUtc)
+        DateTime createdAtUtc,
+        double? actualCaseCount = null)
     {
         if (clientRequestId == Guid.Empty)
         {
@@ -32,6 +33,11 @@ public sealed class GreenGrocerShipmentLineRecord
             throw new ArgumentOutOfRangeException(nameof(actualQuantity));
         }
 
+        if (actualCaseCount.HasValue && actualCaseCount.Value <= 0d)
+        {
+            throw new ArgumentOutOfRangeException(nameof(actualCaseCount));
+        }
+
         Id = id;
         ClientRequestId = clientRequestId;
         OrderLineSnapshotId = orderLineSnapshotId;
@@ -39,6 +45,7 @@ public sealed class GreenGrocerShipmentLineRecord
         DocumentSerie = documentSerie.Trim();
         DocumentOrderNo = documentOrderNo;
         ActualQuantity = actualQuantity;
+        ActualCaseCount = actualCaseCount;
         CreatedAtUtc = createdAtUtc;
     }
 
@@ -55,6 +62,8 @@ public sealed class GreenGrocerShipmentLineRecord
     public int DocumentOrderNo { get; private set; }
 
     public double ActualQuantity { get; private set; }
+
+    public double? ActualCaseCount { get; private set; }
 
     public DateTime CreatedAtUtc { get; private set; }
 }

@@ -606,6 +606,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IGetMobileProductPriceCatalogUseCase, GetMobileProductPriceCatalogUseCase>();
         services.AddScoped<IGetMobileCustomerCatalogUseCase, GetMobileCustomerCatalogUseCase>();
         services.AddScoped<IGetMobileWarehouseCatalogUseCase, GetMobileWarehouseCatalogUseCase>();
+        services.AddScoped<IGreenGrocerLabelStatsReader, SqlGreenGrocerLabelStatsReader>();
         services.AddScoped<IGreenGrocerProductCaseService, GreenGrocerProductCaseService>();
         services.AddScoped<IGreenGrocerOperationsUseCase, GreenGrocerOperationsUseCase>();
         services.AddScoped<IGreenGrocerReportsUseCase, GreenGrocerReportsUseCase>();

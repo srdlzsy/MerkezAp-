@@ -37,7 +37,10 @@ public sealed class GreenGrocerProductCasesController(
         var options = productCaseOptions.CurrentValue;
         return Ok(new GreenGrocerProductCaseCapabilitiesDto(
             options.Enabled,
-            options.Enabled && options.OrderLinkingEnabled,
+            options.Enabled && options.OrderLinkingEnabled && options.AuthDbTrackingEnabled,
+            options.Enabled && options.RequireOrderUserManualApproval,
+            options.Enabled && options.AuthDbProfileStorageEnabled,
+            options.Enabled && options.AuthDbTrackingEnabled,
             options.SourceWarehouseNo > 0 ? options.SourceWarehouseNo : 56,
             ["10", "11", "12", "23"],
             options.DefaultOverDeliveryTolerancePercent is >= 0d and <= 1000d

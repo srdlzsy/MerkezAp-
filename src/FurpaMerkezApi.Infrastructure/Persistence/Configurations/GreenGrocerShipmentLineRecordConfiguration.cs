@@ -20,6 +20,7 @@ public sealed class GreenGrocerShipmentLineRecordConfiguration
         builder.Property(record => record.DocumentSerie).HasColumnName("document_serie").HasMaxLength(20).IsRequired();
         builder.Property(record => record.DocumentOrderNo).HasColumnName("document_order_no").IsRequired();
         builder.Property(record => record.ActualQuantity).HasColumnName("actual_quantity").IsRequired();
+        builder.Property(record => record.ActualCaseCount).HasColumnName("actual_case_count");
         builder.Property(record => record.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired();
 
         builder.HasOne<GreenGrocerOrderLineSnapshot>()

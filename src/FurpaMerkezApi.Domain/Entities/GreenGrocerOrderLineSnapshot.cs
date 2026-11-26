@@ -41,7 +41,14 @@ public sealed class GreenGrocerOrderLineSnapshot
         double overDeliveryTolerancePercent,
         double severeOverDeliveryMultiplier,
         Guid createdByUserId,
-        DateTime createdAtUtc)
+        DateTime createdAtUtc,
+        string? calculationTier = null,
+        int? averageWindowDaysUsed = null,
+        int? labelAgeDays = null,
+        double? priorAverageKgPerCase = null,
+        double? driftPercent = null,
+        bool manualApprovalConfirmed = false,
+        double? approvedKgPerCase = null)
     {
         Id = id;
         WarehouseOrderLineGuid = warehouseOrderLineGuid;
@@ -68,6 +75,13 @@ public sealed class GreenGrocerOrderLineSnapshot
         AllowOrderLinking = allowOrderLinking;
         OverDeliveryTolerancePercent = overDeliveryTolerancePercent;
         SevereOverDeliveryMultiplier = severeOverDeliveryMultiplier;
+        CalculationTier = NormalizeOptional(calculationTier, 10);
+        AverageWindowDaysUsed = averageWindowDaysUsed;
+        LabelAgeDays = labelAgeDays;
+        PriorAverageKgPerCase = priorAverageKgPerCase;
+        DriftPercent = driftPercent;
+        ManualApprovalConfirmed = manualApprovalConfirmed;
+        ApprovedKgPerCase = approvedKgPerCase;
         ActualShippedQuantity = null;
         ActualShippedCaseCount = null;
         Status = "Ordered";
@@ -127,6 +141,20 @@ public sealed class GreenGrocerOrderLineSnapshot
 
     public double SevereOverDeliveryMultiplier { get; private set; }
 
+    public string? CalculationTier { get; private set; }
+
+    public int? AverageWindowDaysUsed { get; private set; }
+
+    public int? LabelAgeDays { get; private set; }
+
+    public double? PriorAverageKgPerCase { get; private set; }
+
+    public double? DriftPercent { get; private set; }
+
+    public bool ManualApprovalConfirmed { get; private set; }
+
+    public double? ApprovedKgPerCase { get; private set; }
+
     public double? ActualShippedQuantity { get; private set; }
 
     public double? ActualShippedCaseCount { get; private set; }
@@ -174,5 +202,18 @@ public sealed class GreenGrocerOrderLineSnapshot
         return normalized.Length <= maxLength
             ? normalized
             : throw new ArgumentException($"{parameterName} can not be longer than {maxLength} characters.", parameterName);
+    }
+
+    private static string? NormalizeOptional(string? value, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var normalized = value.Trim();
+        return normalized.Length <= maxLength
+            ? normalized
+            : normalized[..maxLength];
     }
 }

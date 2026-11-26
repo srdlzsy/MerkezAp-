@@ -30,4 +30,5 @@ public sealed record CreateInterWarehouseShipmentLineRequest(
     string? CustomerResponsibilityCenter = null,
     string? ProductResponsibilityCenter = null,
     Guid? GreenGrocerReferenceOrderLineGuid = null,
-    bool GreenGrocerOverDeliveryConfirmed = false);
+    bool GreenGrocerOverDeliveryConfirmed = false,
+    double? GreenGrocerActualCaseCount = null);

@@ -41,4 +41,11 @@ public sealed record GreenGrocerOrderLineSnapshotRequest(
     bool RequiresManualApproval = false,
     bool AllowOrderLinking = false,
     double OverDeliveryTolerancePercent = 20d,
-    double SevereOverDeliveryMultiplier = 1.5d);
+    double SevereOverDeliveryMultiplier = 1.5d,
+    string? CalculationTier = null,
+    int? AverageWindowDaysUsed = null,
+    int? LabelAgeDays = null,
+    double? PriorAverageKgPerCase = null,
+    double? DriftPercent = null,
+    bool ManualApprovalConfirmed = false,
+    double? ApprovedKgPerCase = null);

@@ -176,7 +176,18 @@ public sealed class VerilenDepoSiparisleriController(
                 request.AverageRecordCount,
                 request.AverageCaseCount,
                 request.CoefficientOfVariation,
-                request.Confidence);
+                request.Confidence,
+                request.RequiresManualApproval,
+                request.AllowOrderLinking,
+                request.OverDeliveryTolerancePercent ?? 20d,
+                request.SevereOverDeliveryMultiplier ?? 1.5d,
+                request.CalculationTier,
+                request.AverageWindowDaysUsed,
+                request.LabelAgeDays,
+                request.PriorAverageKgPerCase,
+                request.DriftPercent,
+                request.ManualApprovalConfirmed,
+                request.ApprovedKgPerCase);
 }
 
 [ValidateDocumentDateTolerance]
@@ -280,4 +291,33 @@ public sealed class GreenGrocerOrderLineSnapshotHttpRequest
     [Required]
     [StringLength(30)]
     public string Confidence { get; init; } = string.Empty;
+
+    public bool RequiresManualApproval { get; init; }
+
+    public bool AllowOrderLinking { get; init; }
+
+    [Range(0d, 1000d)]
+    public double? OverDeliveryTolerancePercent { get; init; }
+
+    [Range(1.0001d, 100d)]
+    public double? SevereOverDeliveryMultiplier { get; init; }
+
+    [StringLength(10)]
+    public string? CalculationTier { get; init; }
+
+    [Range(1, 365)]
+    public int? AverageWindowDaysUsed { get; init; }
+
+    [Range(0, 3650)]
+    public int? LabelAgeDays { get; init; }
+
+    [Range(0.000001, double.MaxValue)]
+    public double? PriorAverageKgPerCase { get; init; }
+
+    public double? DriftPercent { get; init; }
+
+    public bool ManualApprovalConfirmed { get; init; }
+
+    [Range(0.000001, double.MaxValue)]
+    public double? ApprovedKgPerCase { get; init; }
 }

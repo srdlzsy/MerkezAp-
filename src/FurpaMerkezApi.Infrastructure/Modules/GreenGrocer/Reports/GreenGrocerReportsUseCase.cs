@@ -1,16 +1,19 @@
 ﻿using System.Globalization;
 using FurpaMerkezApi.Application.Modules.GreenGrocer.Reports;
+using FurpaMerkezApi.Infrastructure.Modules.GreenGrocer.ProductCases;
 using FurpaMerkezApi.Infrastructure.Persistence;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace FurpaMerkezApi.Infrastructure.Modules.GreenGrocer.Reports;
 
 public sealed class GreenGrocerReportsUseCase(
     MikroDbContext mikroDbContext,
     AuthDbContext authDbContext,
-    ILogger<GreenGrocerReportsUseCase> logger)
+    ILogger<GreenGrocerReportsUseCase> logger,
+    IOptionsMonitor<GreenGrocerProductCaseOptions>? greenGrocerOptions = null)
     : IGreenGrocerReportsUseCase
 {
     private const string GreensTypeCode = "12";
@@ -560,6 +563,11 @@ public sealed class GreenGrocerReportsUseCase(
         IReadOnlyCollection<Guid> lineGuids,
         CancellationToken cancellationToken)
     {
+        if (greenGrocerOptions?.CurrentValue.AuthDbTrackingEnabled != true)
+        {
+            return new Dictionary<Guid, GreenGrocerReportCaseInfoDto>();
+        }
+
         var normalizedLineGuids = lineGuids
             .Where(lineGuid => lineGuid != Guid.Empty)
             .Distinct()
@@ -588,7 +596,13 @@ public sealed class GreenGrocerReportsUseCase(
                     snapshot.Confidence,
                     snapshot.AverageRecordCount,
                     snapshot.AverageCaseCount,
-                    snapshot.CoefficientOfVariation
+                    snapshot.CoefficientOfVariation,
+                    snapshot.CalculationTier,
+                    snapshot.RequiresManualApproval,
+                    snapshot.ManualApprovalConfirmed,
+                    snapshot.ActualShippedQuantity,
+                    snapshot.ActualShippedCaseCount,
+                    snapshot.Status
                 })
                 .ToListAsync(cancellationToken);
 
@@ -605,7 +619,13 @@ public sealed class GreenGrocerReportsUseCase(
                     snapshot.Confidence,
                     snapshot.AverageRecordCount,
                     snapshot.AverageCaseCount,
-                    RoundOrNull(snapshot.CoefficientOfVariation)));
+                    RoundOrNull(snapshot.CoefficientOfVariation),
+                    snapshot.CalculationTier,
+                    snapshot.RequiresManualApproval,
+                    snapshot.ManualApprovalConfirmed,
+                    RoundOrNull(snapshot.ActualShippedQuantity),
+                    RoundOrNull(snapshot.ActualShippedCaseCount),
+                    snapshot.Status));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -632,6 +652,28 @@ public sealed class GreenGrocerReportsUseCase(
             return null;
         }
 
+        var shippedItems = items
+            .Where(item => item.ActualShippedQuantity.HasValue)
+            .ToArray();
+        double? totalShippedQuantity = shippedItems.Length > 0
+            ? Round(shippedItems.Sum(item => item.ActualShippedQuantity!.Value))
+            : null;
+        double? totalShippedCaseCount = shippedItems.Length > 0 &&
+                                        shippedItems.All(item => item.ActualShippedCaseCount.HasValue)
+            ? Round(shippedItems.Sum(item => item.ActualShippedCaseCount!.Value))
+            : null;
+
+        var tiers = items
+            .Select(item => item.CalculationTier)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!)
+            .ToArray();
+        var statuses = items
+            .Select(item => item.ShipmentStatus)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!)
+            .ToArray();
+
         return new GreenGrocerReportCaseInfoDto(
             Round(items.Sum(item => item.InputQuantity)),
             SingleOrMixed(items.Select(item => item.InputMode)),
@@ -643,7 +685,13 @@ public sealed class GreenGrocerReportsUseCase(
             SingleOrMixed(items.Select(item => item.Confidence)),
             SumOrNull(items.Select(item => item.AverageRecordCount)),
             SumOrNull(items.Select(item => item.AverageCaseCount)),
-            WeightedAverageOrNull(items, item => item.CoefficientOfVariation));
+            WeightedAverageOrNull(items, item => item.CoefficientOfVariation),
+            tiers.Length == 0 ? null : SingleOrMixed(tiers),
+            items.Any(item => item.RequiresManualApproval),
+            items.Any(item => item.ManualApprovalConfirmed),
+            totalShippedQuantity,
+            totalShippedCaseCount,
+            statuses.Length == 0 ? null : SingleOrMixed(statuses));
     }
 
     private static string SingleOrMixed(IEnumerable<string> values)

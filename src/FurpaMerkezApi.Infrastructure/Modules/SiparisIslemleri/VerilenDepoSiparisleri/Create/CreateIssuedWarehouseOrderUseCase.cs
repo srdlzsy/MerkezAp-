@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using FurpaMerkezApi.Application.Abstractions.Time;
 using FurpaMerkezApi.Application.Modules.Common.OfflineSync;
+using FurpaMerkezApi.Application.Modules.GreenGrocer.ProductCases;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.VerilenDepoSiparisleri.Create;
 using FurpaMerkezApi.Domain.Entities;
 using FurpaMerkezApi.Infrastructure.Modules.Common;
@@ -24,6 +25,7 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
     IOptions<MikroWriteOptions> mikroWriteOptions,
     IOptionsMonitor<MikroWriteRoutingOptions> mikroWriteRoutingOptions,
     IOptionsMonitor<GreenGrocerProductCaseOptions> greenGrocerProductCaseOptions,
+    IGreenGrocerProductCaseService greenGrocerProductCaseService,
     IClock clock,
     MikroApiClient mikroApiClient,
     MobileOfflineSyncService mobileOfflineSyncService,
@@ -50,6 +52,7 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
                 .ToArray()
         };
         Validate(request);
+        request = await ResolveAndVerifyGreenGrocerLinesAsync(request, cancellationToken);
 
         return await OfflineCreateGuard.ExecuteAsync(
             mobileOfflineSyncService,
@@ -823,6 +826,7 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
         CancellationToken cancellationToken)
     {
         if (!greenGrocerProductCaseOptions.CurrentValue.Enabled ||
+            !greenGrocerProductCaseOptions.CurrentValue.AuthDbTrackingEnabled ||
             request.OutWarehouseNo != ResolveGreenGrocerSourceWarehouseNo() ||
             !request.CreatedByUserId.HasValue ||
             lines.All(line => line.GreenGrocerCase is null))
@@ -868,24 +872,33 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
                         request.OutWarehouseNo,
                         request.InWarehouseNo,
                         item.line.StockCode,
-                        Round(snapshot.InputQuantity),
+                        RoundMetric(snapshot.InputQuantity),
                         snapshot.InputMode,
                         snapshot.ConversionMode,
-                        RoundOrNull(snapshot.AverageKgPerCase),
-                        RoundOrNull(snapshot.UnitsPerCase),
-                        Round(snapshot.EstimatedQuantity),
+                        RoundMetricOrNull(snapshot.AverageKgPerCase),
+                        RoundMetricOrNull(snapshot.UnitsPerCase),
+                        RoundMetric(snapshot.EstimatedQuantity),
                         snapshot.MicroUnit,
                         snapshot.AverageSource,
                         snapshot.AverageRecordCount,
                         snapshot.AverageCaseCount,
-                        RoundOrNull(snapshot.CoefficientOfVariation),
+                        RoundMetricOrNull(snapshot.CoefficientOfVariation),
                         snapshot.Confidence,
                         snapshot.RequiresManualApproval,
                         snapshot.AllowOrderLinking,
-                        Round(snapshot.OverDeliveryTolerancePercent),
-                        Round(snapshot.SevereOverDeliveryMultiplier),
+                        RoundMetric(snapshot.OverDeliveryTolerancePercent),
+                        RoundMetric(snapshot.SevereOverDeliveryMultiplier),
                         request.CreatedByUserId.Value,
-                        createdAtUtc);
+                        createdAtUtc,
+                        snapshot.CalculationTier,
+                        snapshot.AverageWindowDaysUsed,
+                        snapshot.LabelAgeDays,
+                        RoundMetricOrNull(snapshot.PriorAverageKgPerCase),
+                        snapshot.DriftPercent.HasValue
+                            ? Math.Round(snapshot.DriftPercent.Value, 1, MidpointRounding.AwayFromZero)
+                            : null,
+                        snapshot.ManualApprovalConfirmed,
+                        RoundMetricOrNull(snapshot.ApprovedKgPerCase));
                 })
                 .ToArray();
 
@@ -907,6 +920,217 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
                 request.InWarehouseNo,
                 request.OutWarehouseNo);
         }
+    }
+
+    private async Task<CreateIssuedWarehouseOrderRequest> ResolveAndVerifyGreenGrocerLinesAsync(
+        CreateIssuedWarehouseOrderRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!greenGrocerProductCaseOptions.CurrentValue.Enabled ||
+            request.OutWarehouseNo != ResolveGreenGrocerSourceWarehouseNo() ||
+            !request.Lines.Any(line => line.GreenGrocerCase is not null))
+        {
+            return request;
+        }
+
+        var orderDate = (request.OrderDate ?? DateTime.Today).Date;
+        var verifiedLines = new List<CreateIssuedWarehouseOrderLineRequest>(request.Lines.Count);
+
+        foreach (var line in request.Lines)
+        {
+            if (line.GreenGrocerCase is not { } clientSnapshot)
+            {
+                verifiedLines.Add(line);
+                continue;
+            }
+
+            var resolved = await greenGrocerProductCaseService.PreviewResolutionAsync(
+                new GreenGrocerProductCaseResolutionRequest(
+                    line.StockCode,
+                    clientSnapshot.InputQuantity,
+                    request.OutWarehouseNo,
+                    request.InWarehouseNo,
+                    orderDate),
+                cancellationToken);
+
+            var hasBlockingRuleError =
+                string.Equals(resolved.ConversionMode, GreenGrocerProductCaseModes.ConversionBlocked, StringComparison.OrdinalIgnoreCase) ||
+                resolved.Errors.Any(error =>
+                    error.Contains("Pasif", StringComparison.OrdinalIgnoreCase) ||
+                    error.Contains("DLS", StringComparison.OrdinalIgnoreCase) ||
+                    error.Contains("model kodlari", StringComparison.OrdinalIgnoreCase) ||
+                    error.Contains("engelli", StringComparison.OrdinalIgnoreCase) ||
+                    error.Contains("desteklenmiyor", StringComparison.OrdinalIgnoreCase));
+
+            if (hasBlockingRuleError)
+            {
+                var message = resolved.Errors.FirstOrDefault() ??
+                              $"'{resolved.StockCode}' manav kasa siparisine eklenemez.";
+                throw new ArgumentException(message, nameof(request.Lines));
+            }
+
+            EnsureGreenGrocerManualApprovalConfirmed(
+                resolved.StockCode,
+                resolved.StockName,
+                resolved.RequiresManualApproval,
+                clientSnapshot.ManualApprovalConfirmed);
+
+            if (resolved.RequiresManualApproval && clientSnapshot.ManualApprovalConfirmed)
+            {
+                if (string.Equals(resolved.MicroUnit, "KG", StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(resolved.InputMode, GreenGrocerProductCaseModes.InputKgDirect, StringComparison.OrdinalIgnoreCase))
+                {
+                    var approvedKg = clientSnapshot.ApprovedKgPerCase ?? resolved.AverageKgPerCase;
+                    if (approvedKg is null or <= 0d)
+                    {
+                        throw new ArgumentException(
+                            $"'{resolved.StockCode}' ({resolved.StockName}) icin gecerli bir onayli KG/kasa katsayisi girilmelidir.",
+                            nameof(request.Lines));
+                    }
+
+                    var authoritativeQuantity = RoundMetric(clientSnapshot.InputQuantity * approvedKg.Value);
+                    CreateQuantityLimits.EnsureWithinMaximum(authoritativeQuantity, nameof(request.Lines));
+
+                    if (Math.Abs(authoritativeQuantity - line.Quantity) > 0.05d)
+                    {
+                        throw new ArgumentException(
+                            $"'{resolved.StockCode}' icin onaylanan katsayi ({approvedKg.Value:N3} KG/kasa) ile satir miktari ({line.Quantity:N3}) uyusmuyor.",
+                            nameof(request.Lines));
+                    }
+
+                    var isCustomOverride = !resolved.AverageKgPerCase.HasValue ||
+                                           Math.Abs(approvedKg.Value - resolved.AverageKgPerCase.Value) > 0.001d;
+
+                    var authoritativeSnapshot = new GreenGrocerOrderLineSnapshotRequest(
+                        RoundMetric(clientSnapshot.InputQuantity),
+                        resolved.InputMode,
+                        isCustomOverride
+                            ? GreenGrocerProductCaseModes.ConversionManualKgPerCase
+                            : resolved.ConversionMode,
+                        resolved.MicroUnit,
+                        authoritativeQuantity,
+                        RoundMetric(approvedKg.Value),
+                        resolved.UnitsPerCase,
+                        isCustomOverride ? "ManualApproval" : resolved.AverageSource,
+                        resolved.AverageRecordCount,
+                        resolved.AverageCaseCount,
+                        resolved.CoefficientOfVariation,
+                        resolved.Confidence,
+                        true,
+                        resolved.IsOrderLinkable,
+                        resolved.OverDeliveryTolerancePercent,
+                        resolved.SevereOverDeliveryMultiplier,
+                        resolved.CalculationTier,
+                        resolved.AverageWindowDaysUsed,
+                        resolved.LabelAgeDays,
+                        resolved.PriorAverageKgPerCase,
+                        resolved.DriftPercent,
+                        true,
+                        RoundMetric(approvedKg.Value));
+
+                    verifiedLines.Add(line with
+                    {
+                        Quantity = authoritativeQuantity,
+                        GreenGrocerCase = authoritativeSnapshot
+                    });
+                    continue;
+                }
+            }
+
+            if (!resolved.IsUsable || resolved.EstimatedQuantity <= 0d)
+            {
+                var message = resolved.Errors.FirstOrDefault() ??
+                              $"'{resolved.StockCode}' icin gecerli manav kasa hesabi yapilamadi.";
+                throw new ArgumentException(message, nameof(request.Lines));
+            }
+
+            if (ShouldRejectGreenGrocerQuantityDrift(
+                    resolved.ConversionMode,
+                    resolved.AverageSource,
+                    resolved.EstimatedQuantity,
+                    line.Quantity))
+            {
+                throw new ArgumentException(
+                    $"'{resolved.StockCode}' ({resolved.StockName}) icin guncel kasa katsayisi degisti " +
+                    $"(sunucu: {resolved.AverageKgPerCase?.ToString("N2") ?? "-"} KG/kasa, tahmini: {resolved.EstimatedQuantity:N2} {resolved.MicroUnit}). " +
+                    "Satiri yenileyip tekrar kaydedin.",
+                    nameof(request.Lines));
+            }
+
+            var verifiedSnapshot = new GreenGrocerOrderLineSnapshotRequest(
+                RoundMetric(clientSnapshot.InputQuantity),
+                resolved.InputMode,
+                resolved.ConversionMode,
+                resolved.MicroUnit,
+                RoundMetric(resolved.EstimatedQuantity),
+                resolved.AverageKgPerCase,
+                resolved.UnitsPerCase,
+                resolved.AverageSource,
+                resolved.AverageRecordCount,
+                resolved.AverageCaseCount,
+                resolved.CoefficientOfVariation,
+                resolved.Confidence,
+                resolved.RequiresManualApproval,
+                resolved.IsOrderLinkable,
+                resolved.OverDeliveryTolerancePercent,
+                resolved.SevereOverDeliveryMultiplier,
+                resolved.CalculationTier,
+                resolved.AverageWindowDaysUsed,
+                resolved.LabelAgeDays,
+                resolved.PriorAverageKgPerCase,
+                resolved.DriftPercent,
+                resolved.RequiresManualApproval,
+                resolved.RequiresManualApproval ? clientSnapshot.ApprovedKgPerCase : null);
+
+            verifiedLines.Add(line with
+            {
+                Quantity = RoundMetric(resolved.EstimatedQuantity),
+                GreenGrocerCase = verifiedSnapshot
+            });
+        }
+
+        return request with { Lines = verifiedLines };
+    }
+
+    internal static void EnsureGreenGrocerManualApprovalConfirmed(
+        string stockCode,
+        string stockName,
+        bool requiresManualApproval,
+        bool manualApprovalConfirmed)
+    {
+        if (requiresManualApproval && !manualApprovalConfirmed)
+        {
+            throw new ArgumentException(
+                $"'{stockCode}' ({stockName}) icin kasa hesabi manuel onay gerektiriyor. " +
+                "Gosterilen KG/kasa katsayisini kontrol edip onaylayin.",
+                "Lines");
+        }
+    }
+
+    internal static bool ShouldRejectGreenGrocerQuantityDrift(
+        string conversionMode,
+        string averageSource,
+        double serverQuantity,
+        double clientQuantity)
+    {
+        var isDirectFallback =
+            string.Equals(
+                conversionMode,
+                GreenGrocerProductCaseModes.ConversionDirectQuantity,
+                StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(
+                averageSource,
+                GreenGrocerProductCaseModes.AverageSourceNone,
+                StringComparison.OrdinalIgnoreCase);
+
+        if (isDirectFallback)
+        {
+            return false;
+        }
+
+        var driftFromClient = Math.Abs(serverQuantity - clientQuantity);
+        var allowedSlip = Math.Max(0.05d, clientQuantity * 0.05d);
+        return driftFromClient > allowedSlip;
     }
 
     private int ResolveGreenGrocerSourceWarehouseNo()
@@ -1117,4 +1341,10 @@ public sealed class CreateIssuedWarehouseOrderUseCase(
 
     private static double? RoundOrNull(double? value) =>
         value.HasValue ? Round(value.Value) : null;
+
+    private static double RoundMetric(double value) =>
+        Math.Round(value, 3, MidpointRounding.AwayFromZero);
+
+    private static double? RoundMetricOrNull(double? value) =>
+        value.HasValue ? RoundMetric(value.Value) : null;
 }

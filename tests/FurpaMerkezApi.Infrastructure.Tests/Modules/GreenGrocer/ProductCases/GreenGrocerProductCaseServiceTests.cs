@@ -101,10 +101,155 @@ public sealed class GreenGrocerProductCaseServiceTests
         Assert.Equal(25, result.UnitsPerCase);
     }
 
+    [Fact]
+    public async Task PreviewResolutionAsync_KgProduct_UsesWeighted7DayAverageAndReturnsTierMetadata()
+    {
+        await using var authDb = CreateAuthDbContext();
+        await using var mikroDb = CreateMikroDbContext();
+        await using var furpaDb = CreateFurpaDbContext();
+        mikroDb.STOKLARs.Add(new STOKLAR
+        {
+            sto_Guid = Guid.NewGuid(),
+            sto_kod = "016181",
+            sto_isim = "MNV ELMA GOLDEN LUX KG",
+            sto_kisa_ismi = "MNV ELMA GOLDEN LUX KG",
+            sto_model_kodu = "10",
+            sto_birim1_ad = "KG",
+            sto_pasif_fl = false,
+            sto_create_date = DateTime.UtcNow
+        });
+        await mikroDb.SaveChangesAsync();
+
+        var orderDate = new DateTime(2026, 11, 25);
+        var reader = new FakeLabelStatsReader([
+            new GreenGrocerLabelObservation(orderDate.AddDays(-1), 200 * 3.85, 200),
+            new GreenGrocerLabelObservation(orderDate.AddDays(-2), 200 * 3.92, 200),
+            new GreenGrocerLabelObservation(orderDate.AddDays(-4), 128 * 3.90, 128),
+            new GreenGrocerLabelObservation(orderDate.AddDays(-12), 100 * 7.43, 100)
+        ]);
+
+        var service = CreateService(authDb, mikroDb, furpaDb, reader);
+
+        var result = await service.PreviewResolutionAsync(
+            new GreenGrocerProductCaseResolutionRequest("016181", 3, 56, 101, orderDate),
+            CancellationToken.None);
+
+        Assert.True(result.IsUsable);
+        Assert.False(result.RequiresManualApproval);
+        Assert.Equal(GreenGrocerProductCaseModes.Tier1, result.CalculationTier);
+        Assert.Equal(GreenGrocerProductCaseModes.ConfidenceHigh, result.Confidence);
+        Assert.Equal(7, result.AverageWindowDaysUsed);
+        Assert.Equal(1, result.LabelAgeDays);
+        Assert.True(result.DriftDetected);
+        Assert.InRange(result.AverageKgPerCase!.Value, 3.88, 3.90);
+        Assert.InRange(result.EstimatedQuantity, 11.65, 11.70);
+        Assert.Equal(7.43, result.PriorAverageKgPerCase!.Value, 2);
+    }
+
+    [Fact]
+    public async Task PreviewResolutionAsync_KgProductWithoutLabelHistory_UsesDirectQuantityWithoutBlockingUser()
+    {
+        await using var authDb = CreateAuthDbContext();
+        await using var mikroDb = CreateMikroDbContext();
+        await using var furpaDb = CreateFurpaDbContext();
+        mikroDb.STOKLARs.Add(new STOKLAR
+        {
+            sto_Guid = Guid.NewGuid(),
+            sto_kod = "016181",
+            sto_isim = "MNV ELMA GOLDEN LUX KG",
+            sto_kisa_ismi = "MNV ELMA GOLDEN LUX KG",
+            sto_model_kodu = "10",
+            sto_birim1_ad = "KG",
+            sto_pasif_fl = false,
+            sto_create_date = DateTime.UtcNow
+        });
+        await mikroDb.SaveChangesAsync();
+
+        var service = CreateService(
+            authDb,
+            mikroDb,
+            furpaDb,
+            new FakeLabelStatsReader([]),
+            profileStorageEnabled: false);
+
+        var result = await service.PreviewResolutionAsync(
+            new GreenGrocerProductCaseResolutionRequest("016181", 5, 56),
+            CancellationToken.None);
+
+        Assert.True(result.IsUsable);
+        Assert.False(result.RequiresManualApproval);
+        Assert.Equal(GreenGrocerProductCaseModes.ConversionDirectQuantity, result.ConversionMode);
+        Assert.Equal(GreenGrocerProductCaseModes.ConfidenceLow, result.Confidence);
+        Assert.Equal(5, result.EstimatedQuantity);
+        Assert.Empty(result.Errors);
+        Assert.Contains(result.Warnings, warning => warning.Contains("dogrudan kullanildi", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ListProfilesAsync_ProfileStorageDisabled_ReturnsEmptyWithoutAuthTableDependency()
+    {
+        await using var authDb = CreateAuthDbContext();
+        await using var mikroDb = CreateMikroDbContext();
+        await using var furpaDb = CreateFurpaDbContext();
+        var service = CreateService(
+            authDb,
+            mikroDb,
+            furpaDb,
+            profileStorageEnabled: false);
+
+        var result = await service.ListProfilesAsync(
+            new GreenGrocerProductCaseProfileListRequest(),
+            CancellationToken.None);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public async Task PreviewResolutionAsync_LowConfidenceData_DoesNotAskOrderUserForApprovalByDefault()
+    {
+        await using var authDb = CreateAuthDbContext();
+        await using var mikroDb = CreateMikroDbContext();
+        await using var furpaDb = CreateFurpaDbContext();
+        mikroDb.STOKLARs.Add(new STOKLAR
+        {
+            sto_Guid = Guid.NewGuid(),
+            sto_kod = "016181",
+            sto_isim = "MNV ELMA GOLDEN LUX KG",
+            sto_kisa_ismi = "MNV ELMA GOLDEN LUX KG",
+            sto_model_kodu = "10",
+            sto_birim1_ad = "KG",
+            sto_pasif_fl = false,
+            sto_create_date = DateTime.UtcNow
+        });
+        await mikroDb.SaveChangesAsync();
+
+        var orderDate = new DateTime(2026, 11, 25);
+        var service = CreateService(
+            authDb,
+            mikroDb,
+            furpaDb,
+            new FakeLabelStatsReader([
+                new GreenGrocerLabelObservation(orderDate.AddDays(-1), 20, 2)
+            ]),
+            requireOrderUserManualApproval: false);
+
+        var result = await service.PreviewResolutionAsync(
+            new GreenGrocerProductCaseResolutionRequest("016181", 3, 56, 101, orderDate),
+            CancellationToken.None);
+
+        Assert.True(result.IsUsable);
+        Assert.Equal(GreenGrocerProductCaseModes.Tier3, result.CalculationTier);
+        Assert.False(result.RequiresManualApproval);
+        Assert.Equal(30, result.EstimatedQuantity);
+    }
+
     private static GreenGrocerProductCaseService CreateService(
         AuthDbContext authDb,
         MikroDbContext mikroDb,
-        FurpaDbContext furpaDb) =>
+        FurpaDbContext furpaDb,
+        IGreenGrocerLabelStatsReader? labelStatsReader = null,
+        bool profileStorageEnabled = true,
+        bool requireOrderUserManualApproval = false) =>
         new(
             authDb,
             mikroDb,
@@ -114,8 +259,12 @@ public sealed class GreenGrocerProductCaseServiceTests
             {
                 Enabled = true,
                 OrderLinkingEnabled = true,
+                RequireOrderUserManualApproval = requireOrderUserManualApproval,
+                AuthDbProfileStorageEnabled = profileStorageEnabled,
+                AuthDbTrackingEnabled = true,
                 SourceWarehouseNo = 56
-            }));
+            }),
+            labelStatsReader);
 
     private static AuthDbContext CreateAuthDbContext() => new(
         new DbContextOptionsBuilder<AuthDbContext>()
@@ -139,5 +288,16 @@ public sealed class GreenGrocerProductCaseServiceTests
         public T Get(string? name) => value;
 
         public IDisposable? OnChange(Action<T, string?> listener) => null;
+    }
+
+    private sealed class FakeLabelStatsReader(IReadOnlyList<GreenGrocerLabelObservation> observations)
+        : IGreenGrocerLabelStatsReader
+    {
+        public Task<IReadOnlyList<GreenGrocerLabelObservation>> ReadObservationsAsync(
+            string stockCode,
+            DateTime orderDate,
+            int windowDays,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(observations);
     }
 }

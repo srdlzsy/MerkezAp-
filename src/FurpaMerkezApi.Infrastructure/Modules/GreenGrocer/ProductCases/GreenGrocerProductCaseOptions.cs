@@ -8,6 +8,12 @@ public sealed class GreenGrocerProductCaseOptions
 
     public bool OrderLinkingEnabled { get; init; }
 
+    public bool RequireOrderUserManualApproval { get; init; }
+
+    public bool AuthDbProfileStorageEnabled { get; init; }
+
+    public bool AuthDbTrackingEnabled { get; init; }
+
     public int SourceWarehouseNo { get; init; } = 56;
 
     public double DefaultOverDeliveryTolerancePercent { get; init; } = 20d;

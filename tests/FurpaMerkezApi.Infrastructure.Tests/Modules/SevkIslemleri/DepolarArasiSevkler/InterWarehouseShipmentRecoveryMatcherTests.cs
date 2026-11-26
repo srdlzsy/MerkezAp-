@@ -54,6 +54,18 @@ public sealed class InterWarehouseShipmentRecoveryMatcherTests
     }
 
     [Fact]
+    public void GreenGrocerCaseCount_IsSummedOnlyWhenEverySplitLineHasCaseCount()
+    {
+        Assert.Equal(
+            3.75d,
+            CreateInterWarehouseShipmentUseCase.SumCompleteGreenGrocerCaseCount([1.25d, 2.5d]));
+        Assert.Null(
+            CreateInterWarehouseShipmentUseCase.SumCompleteGreenGrocerCaseCount([1.25d, null]));
+        Assert.Null(
+            CreateInterWarehouseShipmentUseCase.SumCompleteGreenGrocerCaseCount([]));
+    }
+
+    [Fact]
     public void GreenGrocerOrderSnapshot_TracksPartialAndCompletedShipmentTotals()
     {
         var userId = Guid.Parse("619ce5f5-71f8-4499-9bc8-8ed07fdd558d");
