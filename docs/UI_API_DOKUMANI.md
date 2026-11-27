@@ -5219,6 +5219,8 @@ Amac:
 
 - Yalnizca `STOKLAR.sto_model_kodu = '12'` olan satirlari sube ve evrak bilgisiyle listeler.
 - `typeCode` query verilse bile bu endpoint yesillik tipine sabitlenir.
+- `GreenGrocerProductCases:Enabled = true` oldugunda `caseInfo` raporda da doldurulur. Auth DB snapshot varsa o kullanilir; snapshot takibi kapaliysa ADET urunlerde Mikro ikinci birim katsayisi, KG urunlerde Furpa etiket gecmisi ortalamasi salt-okunur olarak hesaplanir. Bu hesap siparis miktarini degistirmez.
+- `GreenGrocerProductCases:Enabled = false` oldugunda canli kasa ortalamasi hesaplanmaz ve `caseInfo` bos kalabilir.
 
 Response item:
 
@@ -5265,7 +5267,19 @@ Response item:
   "quantity": 25,
   "latestCreateDate": "2026-06-04T09:15:10",
   "canDelete": true,
-  "caseInfo": null
+  "caseInfo": {
+    "inputQuantity": 25,
+    "inputMode": "Piece",
+    "estimatedQuantity": 25,
+    "microUnit": "ADET",
+    "averageKgPerCase": null,
+    "unitsPerCase": 12,
+    "averageSource": "StockUnitFactor",
+    "confidence": "High",
+    "averageRecordCount": null,
+    "averageCaseCount": null,
+    "coefficientOfVariation": null
+  }
 }
 ```
 

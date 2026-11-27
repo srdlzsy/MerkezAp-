@@ -1,5 +1,7 @@
 ﻿using System.Globalization;
+using FurpaMerkezApi.Application.Modules.GreenGrocer.ProductCases;
 using FurpaMerkezApi.Application.Modules.GreenGrocer.Reports;
+using FurpaMerkezApi.Infrastructure.Common;
 using FurpaMerkezApi.Infrastructure.Modules.GreenGrocer.ProductCases;
 using FurpaMerkezApi.Infrastructure.Persistence;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
@@ -13,7 +15,8 @@ public sealed class GreenGrocerReportsUseCase(
     MikroDbContext mikroDbContext,
     AuthDbContext authDbContext,
     ILogger<GreenGrocerReportsUseCase> logger,
-    IOptionsMonitor<GreenGrocerProductCaseOptions>? greenGrocerOptions = null)
+    IOptionsMonitor<GreenGrocerProductCaseOptions>? greenGrocerOptions = null,
+    IGreenGrocerLabelStatsReader? labelStatsReader = null)
     : IGreenGrocerReportsUseCase
 {
     private const string GreensTypeCode = "12";
@@ -163,6 +166,8 @@ public sealed class GreenGrocerReportsUseCase(
                 StockName = product.sto_isim,
                 ProductShortName = product.sto_kisa_ismi,
                 UnitName = product.sto_birim1_ad,
+                Unit2Name = product.sto_birim2_ad,
+                Unit2Factor = product.sto_birim2_katsayi,
                 GlobalProductCode = product.sto_kuresel_urun_numarasi,
                 Quantity = order.ssip_miktar,
                 LatestCreateDate = order.ssip_create_date
@@ -189,8 +194,20 @@ public sealed class GreenGrocerReportsUseCase(
         var primaryBarcodeByStockCode = await GetPrimaryBarcodeByStockCodeAsync(
             rows.Select(row => row.ProductCode).ToArray(),
             cancellationToken);
-        var caseInfoByLineGuid = await GetCaseInfoByLineGuidAsync(
+        var snapshotCaseInfoByLineGuid = await GetCaseInfoByLineGuidAsync(
             rows.Select(row => row.LineGuid).ToArray(),
+            cancellationToken);
+        var caseInfoByLineGuid = await CompleteGreenCaseInfoAsync(
+            rows.Select(row => new GreenCaseReportRow(
+                row.LineGuid,
+                NormalizeForResponse(row.ProductCode),
+                row.OrderDate ?? normalized.Date,
+                NormalizeForResponse(row.UnitName),
+                NormalizeForResponse(row.Unit2Name),
+                row.Unit2Factor ?? 0d,
+                row.Quantity ?? 0d)).ToArray(),
+            snapshotCaseInfoByLineGuid,
+            labelStatsReader,
             cancellationToken);
 
         var items = rows
@@ -563,7 +580,8 @@ public sealed class GreenGrocerReportsUseCase(
         IReadOnlyCollection<Guid> lineGuids,
         CancellationToken cancellationToken)
     {
-        if (greenGrocerOptions?.CurrentValue.AuthDbTrackingEnabled != true)
+        if (greenGrocerOptions?.CurrentValue.Enabled != true ||
+            greenGrocerOptions.CurrentValue.AuthDbTrackingEnabled != true)
         {
             return new Dictionary<Guid, GreenGrocerReportCaseInfoDto>();
         }
@@ -638,6 +656,109 @@ public sealed class GreenGrocerReportsUseCase(
                 "Manav raporu kasa snapshot bilgisi olmadan olusturulacak.");
             return new Dictionary<Guid, GreenGrocerReportCaseInfoDto>();
         }
+    }
+
+    private async Task<IReadOnlyDictionary<Guid, GreenGrocerReportCaseInfoDto>> CompleteGreenCaseInfoAsync(
+        IReadOnlyCollection<GreenCaseReportRow> rows,
+        IReadOnlyDictionary<Guid, GreenGrocerReportCaseInfoDto> snapshots,
+        IGreenGrocerLabelStatsReader? statsReader,
+        CancellationToken cancellationToken)
+    {
+        if (greenGrocerOptions?.CurrentValue.Enabled != true)
+        {
+            return new Dictionary<Guid, GreenGrocerReportCaseInfoDto>();
+        }
+
+        var result = new Dictionary<Guid, GreenGrocerReportCaseInfoDto>(snapshots);
+        var missingRows = rows
+            .Where(row => row.LineGuid != Guid.Empty && !result.ContainsKey(row.LineGuid))
+            .ToArray();
+
+        foreach (var row in missingRows.Where(row => IsUnit(row.UnitName, "ADET")))
+        {
+            var unitsPerCase = string.IsNullOrWhiteSpace(row.Unit2Name)
+                ? 0d
+                : UnitMultiplierNormalizer.Normalize(row.Unit2Factor);
+            if (unitsPerCase <= 1d)
+            {
+                continue;
+            }
+
+            result[row.LineGuid] = new GreenGrocerReportCaseInfoDto(
+                Round(row.Quantity),
+                GreenGrocerProductCaseModes.InputPiece,
+                Round(row.Quantity),
+                "ADET",
+                null,
+                Round(unitsPerCase),
+                GreenGrocerProductCaseModes.AverageSourceStockUnitFactor,
+                GreenGrocerProductCaseModes.ConfidenceHigh,
+                null,
+                null,
+                null);
+        }
+
+        if (statsReader is null)
+        {
+            return result;
+        }
+
+        var kgRowsByProduct = missingRows
+            .Where(row => IsUnit(row.UnitName, "KG") && !string.IsNullOrWhiteSpace(row.StockCode))
+            .GroupBy(row => row.StockCode, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var productRows in kgRowsByProduct)
+        {
+            var orderDate = productRows.Max(row => row.OrderDate).Date;
+            GreenGrocerCaseCalculationResult calculation;
+            try
+            {
+                var observations = await statsReader.ReadObservationsAsync(
+                    productRows.Key,
+                    orderDate,
+                    GreenGrocerCaseCalculationSettings.Default.FullWindowDays,
+                    cancellationToken);
+                calculation = GreenGrocerCaseAverageCalculator.Evaluate(observations, orderDate);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                logger.LogWarning(
+                    exception,
+                    "Yesillik raporu canli kasa ortalamasi olmadan olusturulacak. StokKodu={StockCode}",
+                    productRows.Key);
+                continue;
+            }
+
+            if (calculation.AverageKgPerCase is not > 0d)
+            {
+                continue;
+            }
+
+            foreach (var row in productRows)
+            {
+                var averageKgPerCase = calculation.AverageKgPerCase.Value;
+                result[row.LineGuid] = new GreenGrocerReportCaseInfoDto(
+                    Round(row.Quantity / averageKgPerCase),
+                    GreenGrocerProductCaseModes.InputCase,
+                    Round(row.Quantity),
+                    "KG",
+                    Round(averageKgPerCase),
+                    null,
+                    GreenGrocerProductCaseModes.AverageSourceLabelHistory,
+                    calculation.Confidence,
+                    calculation.RecordCount,
+                    calculation.CaseCount,
+                    RoundOrNull(calculation.CoefficientOfVariation),
+                    calculation.CalculationTier,
+                    calculation.RequiresManualApproval);
+            }
+        }
+
+        return result;
     }
 
     private static GreenGrocerReportCaseInfoDto? AggregateCaseInfo(
@@ -884,6 +1005,9 @@ public sealed class GreenGrocerReportsUseCase(
     private static string NormalizeForResponse(string? value) =>
         NormalizeOrNull(value) ?? string.Empty;
 
+    private static bool IsUnit(string? value, string expected) =>
+        string.Equals(value?.Trim(), expected, StringComparison.OrdinalIgnoreCase);
+
     private static string FirstNonEmpty(params string[] values) =>
         values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? string.Empty;
 
@@ -907,5 +1031,14 @@ public sealed class GreenGrocerReportsUseCase(
         int BranchNo,
         string DocumentSerie,
         int DocumentOrderNo);
+
+    private sealed record GreenCaseReportRow(
+        Guid LineGuid,
+        string StockCode,
+        DateTime OrderDate,
+        string UnitName,
+        string Unit2Name,
+        double Unit2Factor,
+        double Quantity);
 }
 
