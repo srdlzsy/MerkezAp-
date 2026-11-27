@@ -20163,6 +20163,8 @@ Not: Bu listede eski teknik route'lar da bulunabilir. Yeni UI icin oncelikli rou
   - response `AxataOutboundDeliveryImportPreviewDto`
 - `POST /api/integrations/axata-sync/live/axata/outbound-deliveries/c01/import`
   - AXATA C01 bekleyen teslimatlarini Mikro depolar arasi sevk fisine cevirir
+  - kaynak Mikro siparisi silinmisse pozitif ve iptal olmayan AXATA fiziksel cikisi, mevcut Mikro sevki bulunmadigi dogrulandiktan sonra siparis linki olmadan yazilir; otomatik yeni siparis acilmaz
+  - siparissiz kurtarma `C01-{AXATA sequence}` belge izi ve sabit create kimligiyle idempotenttir; tekrar cagrida ikinci fis uretilmez
   - Mikro fis ve `STOK_HAREKETLERI_EK` linkleri basarili yazildiktan sonra AXATA `AxataServicePoolEXT.svc/updIntegrationTableAsync` ile `ENT006.S06STAT=1` yapar
   - JWT'deki talep eden kullanici kimligi backend tarafindan alt depolar arasi sevk create request'ine aktarilir. UI body icinde `requestedByUserId` veya `clientRequestId` gondermez
   - Alt create akisi kalici guvenli yazma rezervasyonu acar. Mikro yazimi baslamadan once bu rezervasyon olusamazsa AXATA ack atilmaz
@@ -20205,7 +20207,8 @@ Not: Bu listede eski teknik route'lar da bulunabilir. Yeni UI icin oncelikli rou
   - response `AxataOutboundDeliveryImportPreviewDto`
 - `POST /api/integrations/axata-sync/live/axata/outbound-deliveries/c01/documents/{documentSerie}/{documentOrderNo}/import`
   - AXATA'da teslimati kesilmis ama Mikro sevk linki eksik C01 belgeyi Mikro depolar arasi sevk fisine cevirir
-  - AXATA satirlari Mikro siparis satirlariyla guvenli eslesmezse veya AXATA miktari Mikro kalan siparis miktarini asarsa veri yazmaz
+  - Mikro siparisi silinmisse `mikroCheckState=OrderMissingReadyForImport` ve `allowedAction=ImportWithoutOrder` ile ayni siparissiz kurtarma yolu manuel ekrandan da calisir
+  - ayni AXATA sequence icin Mikro'da farkli stok veya miktar izi bulunursa `ExistingMikroShipmentConflict` doner ve veri yazilmaz
   - Guvenli eslesme sirasi: `S07KALN + S07SKOD`, 1-bazli satir no farki, son olarak tekil stok + kalan miktar eslesmesi
   - Talep eden kullanici ve guvenli create kimligi backend tarafinda yonetilir; UI bunlari body'ye eklemez
   - body `AxataOutboundDeliveryDocumentImportExecuteHttpRequest`

@@ -37,6 +37,58 @@ internal sealed class AxataSynchronizationDocumentStateService(
         return keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
+    public async Task ClearFailuresByExactReasonAsync(
+        string taskCode,
+        IReadOnlyCollection<string> reasons,
+        CancellationToken cancellationToken)
+    {
+        if (!IsEnabled() || reasons.Count == 0)
+        {
+            return;
+        }
+
+        var normalizedTaskCode = Normalize(taskCode);
+        var normalizedReasons = reasons
+            .Where(reason => !string.IsNullOrWhiteSpace(reason))
+            .Select(reason => reason.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        if (normalizedReasons.Length == 0)
+        {
+            return;
+        }
+
+        var query = authDbContext.AxataSynchronizationDocumentStates
+            .Where(item =>
+                item.TaskCode == normalizedTaskCode &&
+                normalizedReasons.Contains(item.LastError));
+        int deletedCount;
+
+        if (authDbContext.Database.IsRelational())
+        {
+            deletedCount = await query.ExecuteDeleteAsync(cancellationToken);
+        }
+        else
+        {
+            var states = await query.ToArrayAsync(cancellationToken);
+            deletedCount = states.Length;
+            authDbContext.AxataSynchronizationDocumentStates.RemoveRange(states);
+            if (deletedCount > 0)
+            {
+                await authDbContext.SaveChangesAsync(cancellationToken);
+            }
+        }
+
+        if (deletedCount > 0)
+        {
+            logger.LogInformation(
+                "AXATA belge retry kurali degistigi icin eski ertelenen kayitlar yeniden denemeye acildi. TaskCode={TaskCode}, Count={Count}",
+                normalizedTaskCode,
+                deletedCount);
+        }
+    }
+
     public async Task RecordOutcomeAsync(
         string taskCode,
         IEnumerable<string> succeededDocumentKeys,

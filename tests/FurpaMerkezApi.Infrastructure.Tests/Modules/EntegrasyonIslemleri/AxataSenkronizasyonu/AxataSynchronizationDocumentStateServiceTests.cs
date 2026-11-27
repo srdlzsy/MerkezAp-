@@ -159,6 +159,41 @@ public sealed class AxataSynchronizationDocumentStateServiceTests
         Assert.Equal("F50.202", remainingState.DocumentKey);
     }
 
+    [Fact]
+    public async Task ClearFailuresByExactReason_RequeuesOnlyTheNowRecoverableC01Failure()
+    {
+        await using var dbContext = CreateDbContext();
+        var clock = new MutableClock(new DateTime(2026, 11, 27, 6, 0, 0, DateTimeKind.Utc));
+        var service = CreateService(dbContext, clock);
+
+        await service.RecordOutcomeAsync(
+            "c01-outbound-delivery-import",
+            [],
+            [
+                new AxataSynchronizationDocumentFailure("265235", "Mikro depolar arasi siparis bulunamadi."),
+                new AxataSynchronizationDocumentFailure("265236", "AXATA teslimat satirlari eslesmedi.")
+            ],
+            CancellationToken.None);
+        await service.RecordOutcomeAsync(
+            "c02-outbound-delivery-import",
+            [],
+            [new AxataSynchronizationDocumentFailure("265237", "Mikro depolar arasi siparis bulunamadi.")],
+            CancellationToken.None);
+
+        await service.ClearFailuresByExactReasonAsync(
+            "c01-outbound-delivery-import",
+            ["Mikro depolar arasi siparis bulunamadi."],
+            CancellationToken.None);
+
+        var states = await dbContext.AxataSynchronizationDocumentStates
+            .OrderBy(item => item.DocumentKey)
+            .ToArrayAsync();
+        Assert.Equal(2, states.Length);
+        Assert.DoesNotContain(states, state => state.DocumentKey == "265235");
+        Assert.Contains(states, state => state.DocumentKey == "265236");
+        Assert.Contains(states, state => state.DocumentKey == "265237");
+    }
+
     private static AuthDbContext CreateDbContext() => new(
         new DbContextOptionsBuilder<AuthDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())

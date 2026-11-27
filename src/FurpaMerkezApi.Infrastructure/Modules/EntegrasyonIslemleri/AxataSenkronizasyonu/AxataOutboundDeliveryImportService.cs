@@ -382,7 +382,8 @@ internal sealed class AxataOutboundDeliveryImportService(
                     ? "AXATA C01 teslimatlar getOutBoundDeliveryListAsync ile Status=0 olarak okunur."
                     : $"AXATA C01 teslimatlar AXATA SQL ENT006/ENT007 tablolarindan Status=0 ve tam {request.AxataDate.Value:yyyy-MM-dd} tarihi icin okunur.",
                 $"Henuz teslimat satiri olusmamis {eligibleDocuments.Count - readyDocuments.Length} AXATA basligi hazir olmadigi icin listeye alinmadi.",
-                "CanImport=true olan belgelerde AXATA teslimat satirlari Mikro siparis satirlariyla guvenli eslesmistir ve henuz fis linki yoktur.",
+                "CanImport=true olan belgelerde AXATA fiziksel cikisi guvenli aktarim ve duplicate kontrollerini gecmistir.",
+                "Mikro siparisi silinmis ancak AXATA fiziksel cikis satirlari tam olan belgeler, mevcut Mikro sevki bulunmadigi dogrulandiktan sonra siparis baglantisiz sevk fisi olarak aktarilir.",
                 "AXATA fiziksel cikisi Mikro siparis kalanini asiyorsa tam AXATA miktari sevk fisine yazilir; siparis teslim miktari siparis miktarinda kapatilir.",
                 "Mikro fis linki zaten varsa tekrar fis uretilmez; execute sirasinda uygun durumda sadece AXATA ack yapilabilir."
             ]);
@@ -505,6 +506,14 @@ internal sealed class AxataOutboundDeliveryImportService(
                     continue;
                 }
 
+                if (request.Acknowledge && CanAcknowledgeExistingUnlinkedC01Shipment(analysis))
+                {
+                    await AcknowledgeOutboundDeliveryAsync(analysis.Document.AxataSequenceNo, cancellationToken);
+                    skippedDocumentCount++;
+                    results.Add(CreateExistingUnlinkedC01AcknowledgementResult(analysis));
+                    continue;
+                }
+
                 skippedDocumentCount++;
                 failures.Add(new AxataOutboundDeliveryImportFailureDto(
                     analysis.Document.AxataSequenceNo,
@@ -546,6 +555,7 @@ internal sealed class AxataOutboundDeliveryImportService(
             [
                 "AXATA ack islemi Mikro sevk fisi basariyla olustuktan sonra yapilir.",
                 "Mikro fis linki mevcutsa duplicate fis olusturulmaz.",
+                "Silinmis siparis kurtarmasinda otomatik yeni siparis acilmaz ve siparis teslim miktari guncellenmez.",
                 $"Talep eden kullanici: {requestedByUserId}"
             ]);
     }
@@ -575,7 +585,7 @@ internal sealed class AxataOutboundDeliveryImportService(
                 string.IsNullOrWhiteSpace(request.Status)
                     ? "Status belirtilmedigi icin once 0, sonra 1 denendi."
                     : $"AXATA status {request.Status.Trim()} ile arandi.",
-                "CanImport=true ise Mikro sevk fisi linki eksiktir ve AXATA satirlari Mikro siparis satirlariyla guvenli eslesmistir."
+                "CanImport=true ise Mikro sevk fisi eksiktir; siparis silinmisse AXATA fiziksel cikisi siparis baglantisiz sevk olarak aktarilabilir."
             ]);
     }
 
@@ -657,6 +667,12 @@ internal sealed class AxataOutboundDeliveryImportService(
                     shipmentResponse.MovementDate,
                     shipmentResponse.DocumentDate,
                     shipmentResponse.DocumentNo));
+            }
+            else if (request.Acknowledge && CanAcknowledgeExistingUnlinkedC01Shipment(analysis))
+            {
+                await AcknowledgeOutboundDeliveryAsync(analysis.Document.AxataSequenceNo, cancellationToken);
+                skippedDocumentCount++;
+                results.Add(CreateExistingUnlinkedC01AcknowledgementResult(analysis));
             }
             else
             {
@@ -4592,6 +4608,16 @@ internal sealed class AxataOutboundDeliveryImportService(
             .ToDictionary(
                 group => group.Key,
                 group => group.ToArray());
+        var documentsWithoutMikroOrder = documents
+            .Where(document =>
+                !document.DocumentOrderNo.HasValue ||
+                !orderLinesByDocument.ContainsKey(new MikroDocumentKey(
+                    document.DocumentSerie,
+                    document.DocumentOrderNo.Value)))
+            .ToArray();
+        var existingShipmentChecks = await GetExistingC01ShipmentChecksAsync(
+            documentsWithoutMikroOrder,
+            cancellationToken);
 
         return documents
             .Select(document =>
@@ -4606,27 +4632,34 @@ internal sealed class AxataOutboundDeliveryImportService(
                 var matchedLines = MatchC01Lines(document, documentOrderLines, positiveLines);
                 var existingLinkedMovementLineCount = documentOrderLines
                     .Sum(order => movementLinkCounts.GetValueOrDefault(order.ssip_Guid));
+                var existingShipmentCheck = existingShipmentChecks.GetValueOrDefault(
+                    document.AxataSequenceNo,
+                    C01ExistingShipmentCheck.None);
                 var blockingWarning = BuildC01Warning(
                     document,
                     documentOrderLines,
                     positiveLines,
                     matchedLines,
-                    existingLinkedMovementLineCount);
+                    existingLinkedMovementLineCount,
+                    existingShipmentCheck);
                 var canImport = string.IsNullOrWhiteSpace(blockingWarning);
-                var warning = blockingWarning ?? BuildC01OverDeliveryNotice(matchedLines);
+                var warning = blockingWarning ?? BuildC01ImportNotice(documentOrderLines, matchedLines);
                 var mikroCheckState = ResolveC01MikroCheckState(
                     document,
                     documentOrderLines,
                     positiveLines,
                     matchedLines,
                     existingLinkedMovementLineCount,
-                    canImport);
+                    canImport,
+                    existingShipmentCheck);
                 var allowedAction = ResolveC01AllowedAction(
                     document,
+                    documentOrderLines,
                     positiveLines,
                     matchedLines,
                     existingLinkedMovementLineCount,
-                    canImport);
+                    canImport,
+                    existingShipmentCheck);
 
                 return new C01DeliveryAnalysis(
                     document,
@@ -4651,7 +4684,8 @@ internal sealed class AxataOutboundDeliveryImportService(
                         mikroCheckState,
                         allowedAction),
                     matchedLines,
-                    mikroCheckState);
+                    mikroCheckState,
+                    existingShipmentCheck);
             })
             .ToArray();
     }
@@ -4708,6 +4742,178 @@ internal sealed class AxataOutboundDeliveryImportService(
         return linkedOrderLineGuids
             .GroupBy(guid => guid)
             .ToDictionary(group => group.Key, group => group.Count());
+    }
+
+    private async Task<Dictionary<long, C01ExistingShipmentCheck>> GetExistingC01ShipmentChecksAsync(
+        IReadOnlyCollection<AxataOutboundDeliveryDocument> documents,
+        CancellationToken cancellationToken)
+    {
+        var eligibleDocuments = documents
+            .Where(document =>
+                document.AxataSequenceNo > 0 &&
+                document.AxataDate.HasValue &&
+                document.SourceWarehouseNo > 0 &&
+                document.TargetWarehouseNo > 0 &&
+                HasPositiveAxataQuantity(document))
+            .ToArray();
+
+        if (eligibleDocuments.Length == 0)
+        {
+            return new Dictionary<long, C01ExistingShipmentCheck>();
+        }
+
+        var sourceWarehouseNos = eligibleDocuments
+            .Select(document => document.SourceWarehouseNo)
+            .Distinct()
+            .ToArray();
+        var targetWarehouseNos = eligibleDocuments
+            .Select(document => document.TargetWarehouseNo)
+            .Distinct()
+            .ToArray();
+        var stockCodes = eligibleDocuments
+            .SelectMany(document => document.Lines)
+            .Where(line => line.Quantity > QuantityTolerance)
+            .Select(line => NormalizeCode(line.StockCode))
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var axataDeliveryNos = eligibleDocuments
+            .Select(document => NormalizeText(document.AxataDeliveryNo))
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var transferDocumentNos = eligibleDocuments
+            .Select(document => BuildC01TransferDocumentNo(document.AxataSequenceNo))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (stockCodes.Length == 0)
+        {
+            return new Dictionary<long, C01ExistingShipmentCheck>();
+        }
+
+        var minMovementDate = eligibleDocuments.Min(document => document.AxataDate!.Value).Date.AddDays(-1);
+        var latestExpectedDate = eligibleDocuments
+            .Max(document => document.AxataDate!.Value)
+            .Date
+            .AddDays(ExistingShipmentLookupLookAheadDays);
+        var maxMovementDateExclusive = (latestExpectedDate > DateTime.Today
+                ? latestExpectedDate
+                : DateTime.Today)
+            .AddDays(1);
+
+        var rows = await mikroWriteDbContext.STOK_HAREKETLERIs
+            .AsNoTracking()
+            .Where(movement =>
+                movement.sth_tarih.HasValue &&
+                movement.sth_tarih.Value >= minMovementDate &&
+                movement.sth_tarih.Value < maxMovementDateExclusive &&
+                movement.sth_iptal != true &&
+                movement.sth_evraktip == InterWarehouseShipmentDocumentType &&
+                movement.sth_tip == InterWarehouseShipmentMovementType &&
+                movement.sth_cins == InterWarehouseShipmentMovementGenre &&
+                movement.sth_normal_iade == NormalMovement &&
+                movement.sth_stok_kod != null &&
+                stockCodes.Contains(movement.sth_stok_kod) &&
+                movement.sth_cikis_depo_no.HasValue &&
+                sourceWarehouseNos.Contains(movement.sth_cikis_depo_no.Value) &&
+                ((movement.sth_nakliyedurumu == DeliveredToTargetWarehouseState &&
+                  movement.sth_giris_depo_no.HasValue &&
+                  targetWarehouseNos.Contains(movement.sth_giris_depo_no.Value)) ||
+                 (movement.sth_nakliyedurumu != DeliveredToTargetWarehouseState &&
+                  movement.sth_nakliyedeposu.HasValue &&
+                  targetWarehouseNos.Contains(movement.sth_nakliyedeposu.Value))) &&
+                ((movement.sth_belge_no != null && transferDocumentNos.Contains(movement.sth_belge_no)) ||
+                 (movement.sth_aciklama != null && axataDeliveryNos.Contains(movement.sth_aciklama))))
+            .Select(movement => new ExistingC01ShipmentCandidateRow(
+                movement.sth_evrakno_seri,
+                movement.sth_evrakno_sira,
+                movement.sth_belge_no,
+                movement.sth_tarih,
+                movement.sth_aciklama,
+                movement.sth_cikis_depo_no ?? 0,
+                movement.sth_nakliyedurumu == DeliveredToTargetWarehouseState
+                    ? movement.sth_giris_depo_no ?? 0
+                    : movement.sth_nakliyedeposu ?? 0,
+                movement.sth_stok_kod,
+                movement.sth_miktar ?? 0d))
+            .ToListAsync(cancellationToken);
+        var candidateDocuments = rows
+            .GroupBy(row => new
+            {
+                row.MovementDocumentSerie,
+                row.MovementDocumentOrderNo,
+                row.MovementDocumentNo,
+                MovementDate = row.MovementDate?.Date,
+                row.Description,
+                row.SourceWarehouseNo,
+                row.TargetWarehouseNo
+            })
+            .Select(group => new ExistingC01ShipmentCandidateDocument(
+                group.Key.MovementDocumentSerie,
+                group.Key.MovementDocumentOrderNo,
+                group.Key.MovementDocumentNo,
+                group.Key.MovementDate,
+                group.Key.Description,
+                group.Key.SourceWarehouseNo,
+                group.Key.TargetWarehouseNo,
+                group.Count(),
+                group.Sum(row => row.Quantity),
+                group.Select(row => new ExistingC01ShipmentCandidateLine(
+                        NormalizeCode(row.StockCode),
+                        row.Quantity))
+                    .ToArray()))
+            .ToArray();
+        var result = new Dictionary<long, C01ExistingShipmentCheck>();
+
+        foreach (var document in eligibleDocuments)
+        {
+            var scopedCandidates = candidateDocuments
+                .Where(candidate =>
+                    candidate.SourceWarehouseNo == document.SourceWarehouseNo &&
+                    candidate.TargetWarehouseNo == document.TargetWarehouseNo)
+                .ToArray();
+            var transferDocumentNo = BuildC01TransferDocumentNo(document.AxataSequenceNo);
+            var markerCandidates = scopedCandidates
+                .Where(candidate => TextEquals(candidate.MovementDocumentNo, transferDocumentNo))
+                .ToArray();
+
+            if (markerCandidates.Length > 0)
+            {
+                var markerMatches = markerCandidates
+                    .Where(candidate => ShipmentFingerprintMatches(document, candidate))
+                    .ToArray();
+                result[document.AxataSequenceNo] = markerMatches.Length > 0
+                    ? new C01ExistingShipmentCheck(
+                        markerMatches[0],
+                        false,
+                        markerMatches.Length > 1
+                            ? "Ayni AXATA sira kimligiyle birden fazla Mikro sevk fisi bulundu. Yeni fis uretilmeyecek."
+                            : null)
+                    : new C01ExistingShipmentCheck(
+                        null,
+                        true,
+                        $"{transferDocumentNo} belge numarali Mikro sevki AXATA satir veya miktarlariyla uyusmuyor.");
+                continue;
+            }
+
+            var legacyMatches = scopedCandidates
+                .Where(candidate => TextEquals(candidate.Description, document.AxataDeliveryNo))
+                .Where(candidate => ShipmentFingerprintMatches(document, candidate))
+                .ToArray();
+
+            if (legacyMatches.Length > 0)
+            {
+                result[document.AxataSequenceNo] = new C01ExistingShipmentCheck(
+                    legacyMatches[0],
+                    false,
+                    legacyMatches.Length > 1
+                        ? "Ayni AXATA evrak iziyle birden fazla Mikro sevk fisi bulundu. Yeni fis uretilmeyecek."
+                        : null);
+            }
+        }
+
+        return result;
     }
 
     private static IReadOnlyCollection<MatchedC01Line> MatchC01Lines(
@@ -4791,7 +4997,8 @@ internal sealed class AxataOutboundDeliveryImportService(
         IReadOnlyCollection<DEPOLAR_ARASI_SIPARISLER> orderLines,
         IReadOnlyCollection<AxataOutboundDeliveryLine> positiveLines,
         IReadOnlyCollection<MatchedC01Line> matchedLines,
-        int existingLinkedMovementLineCount)
+        int existingLinkedMovementLineCount,
+        C01ExistingShipmentCheck existingShipmentCheck)
     {
         if (document.AxataSequenceNo <= 0)
         {
@@ -4820,7 +5027,25 @@ internal sealed class AxataOutboundDeliveryImportService(
 
         if (orderLines.Count == 0)
         {
-            return "Mikro depolar arasi siparis bulunamadi.";
+            if (existingShipmentCheck.HasConflict)
+            {
+                return existingShipmentCheck.Detail ??
+                       "Ayni AXATA sira kimligiyle Mikro'da farkli satir veya miktarda sevk bulundu; otomatik islem durduruldu.";
+            }
+
+            if (existingShipmentCheck.Match is not null)
+            {
+                return IsCompletedStatus(document.Status)
+                    ? "Mikro sevk fisi siparis linki olmadan mevcut ve AXATA status tamamlandi; islem gerekmiyor."
+                    : "Mikro sevk fisi siparis linki olmadan mevcut; duplicate fis uretilmeden AXATA ack yapilabilir.";
+            }
+
+            if (!document.AxataDate.HasValue)
+            {
+                return "Mikro siparisi bulunamadi ve AXATA sevk tarihi okunamadi; duplicate kontrolu guvenli yapilamadi.";
+            }
+
+            return null;
         }
 
         if (matchedLines.Count != positiveLines.Count)
@@ -4850,6 +5075,18 @@ internal sealed class AxataOutboundDeliveryImportService(
         return null;
     }
 
+    private static string? BuildC01ImportNotice(
+        IReadOnlyCollection<DEPOLAR_ARASI_SIPARISLER> orderLines,
+        IReadOnlyCollection<MatchedC01Line> matchedLines)
+    {
+        if (orderLines.Count == 0)
+        {
+            return "Mikro siparisi silinmis. AXATA fiziksel cikisi, siparis baglantisi ve teslim miktari guncellemesi olmadan dogrudan Mikro sevk fisine yazilabilir.";
+        }
+
+        return BuildC01OverDeliveryNotice(matchedLines);
+    }
+
     private static string? BuildC01OverDeliveryNotice(
         IReadOnlyCollection<MatchedC01Line> matchedLines)
     {
@@ -4877,13 +5114,21 @@ internal sealed class AxataOutboundDeliveryImportService(
         analysis.MatchedLines.Count > 0 &&
         analysis.MatchedLines.Count == analysis.Document.Lines.Count(line => line.Quantity > QuantityTolerance);
 
+    private static bool CanAcknowledgeExistingUnlinkedC01Shipment(C01DeliveryAnalysis analysis) =>
+        !IsCancelledOutboundDelivery(analysis.Document) &&
+        HasPositiveAxataQuantity(analysis.Document) &&
+        IsPendingStatus(analysis.Document.Status) &&
+        !analysis.ExistingShipmentCheck.HasConflict &&
+        analysis.ExistingShipmentCheck.Match is not null;
+
     private static string ResolveC01MikroCheckState(
         AxataOutboundDeliveryDocument document,
         IReadOnlyCollection<DEPOLAR_ARASI_SIPARISLER> orderLines,
         IReadOnlyCollection<AxataOutboundDeliveryLine> positiveLines,
         IReadOnlyCollection<MatchedC01Line> matchedLines,
         int existingLinkedMovementLineCount,
-        bool canImport)
+        bool canImport,
+        C01ExistingShipmentCheck existingShipmentCheck)
     {
         if (IsCancelledOutboundDelivery(document))
         {
@@ -4902,9 +5147,23 @@ internal sealed class AxataOutboundDeliveryImportService(
                 : "MikroShipmentExistsPendingAck";
         }
 
+        if (existingShipmentCheck.Match is not null)
+        {
+            return IsCompletedStatus(document.Status)
+                ? "Synchronized"
+                : "MikroShipmentExistsPendingAck";
+        }
+
+        if (existingShipmentCheck.HasConflict)
+        {
+            return "ExistingMikroShipmentConflict";
+        }
+
         if (canImport)
         {
-            return "ReadyForImport";
+            return orderLines.Count == 0
+                ? "OrderMissingReadyForImport"
+                : "ReadyForImport";
         }
 
         if (orderLines.Count == 0)
@@ -4922,14 +5181,18 @@ internal sealed class AxataOutboundDeliveryImportService(
 
     private static string ResolveC01AllowedAction(
         AxataOutboundDeliveryDocument document,
+        IReadOnlyCollection<DEPOLAR_ARASI_SIPARISLER> orderLines,
         IReadOnlyCollection<AxataOutboundDeliveryLine> positiveLines,
         IReadOnlyCollection<MatchedC01Line> matchedLines,
         int existingLinkedMovementLineCount,
-        bool canImport)
+        bool canImport,
+        C01ExistingShipmentCheck existingShipmentCheck)
     {
         if (canImport)
         {
-            return "ImportToMikro";
+            return orderLines.Count == 0
+                ? "ImportWithoutOrder"
+                : "ImportToMikro";
         }
 
         if (IsCompletedStatus(document.Status) && existingLinkedMovementLineCount > 0)
@@ -4944,6 +5207,15 @@ internal sealed class AxataOutboundDeliveryImportService(
             existingLinkedMovementLineCount > 0 &&
             matchedLines.Count > 0 &&
             matchedLines.Count == positiveLines.Count;
+
+        if (!IsCancelledOutboundDelivery(document) &&
+            HasPositiveAxataQuantity(document) &&
+            IsPendingStatus(document.Status) &&
+            !existingShipmentCheck.HasConflict &&
+            existingShipmentCheck.Match is not null)
+        {
+            return "ReconcileAndAcknowledge";
+        }
 
         return canReconcile
             ? "ReconcileAndAcknowledge"
@@ -4968,7 +5240,9 @@ internal sealed class AxataOutboundDeliveryImportService(
             analysis.ImportDto.MikroDeliveredQuantity,
             analysis.ImportDto.ExistingLinkedMovementLineCount,
             analysis.MikroCheckState,
-            analysis.ImportDto.CanImport || CanReconcileExistingC01Shipment(analysis),
+            analysis.ImportDto.CanImport ||
+            CanReconcileExistingC01Shipment(analysis) ||
+            CanAcknowledgeExistingUnlinkedC01Shipment(analysis),
             analysis.ImportDto.Warning,
             analysis.Document.ShipmentState,
             IsCancelledOutboundDelivery(analysis.Document),
@@ -5044,7 +5318,7 @@ internal sealed class AxataOutboundDeliveryImportService(
         };
     }
 
-    private static CreateInterWarehouseShipmentRequest BuildCreateShipmentRequest(
+    internal static CreateInterWarehouseShipmentRequest BuildCreateShipmentRequest(
         C01DeliveryAnalysis analysis,
         Guid requestedByUserId,
         string? dateMode = null,
@@ -5056,16 +5330,9 @@ internal sealed class AxataOutboundDeliveryImportService(
             dateMode,
             movementDate,
             documentDate);
-
-        return new(
-            analysis.Document.SourceWarehouseNo,
-            analysis.Document.TargetWarehouseNo,
-            TransitWarehouseNo,
-            shipmentDates.MovementDate,
-            shipmentDates.DocumentDate,
-            "",
-            analysis.Document.AxataDeliveryNo,
-            analysis.MatchedLines
+        var hasLinkedOrder = analysis.MatchedLines.Count > 0;
+        var lines = hasLinkedOrder
+            ? analysis.MatchedLines
                 .OrderBy(line => line.AxataLine.LineNo)
                 .Select(line => new CreateInterWarehouseShipmentLineRequest(
                     line.AxataLine.StockCode,
@@ -5079,10 +5346,53 @@ internal sealed class AxataOutboundDeliveryImportService(
                     line.OrderLine.ssip_projekodu,
                     null,
                     line.OrderLine.ssip_sormerkezi))
-                .ToArray(),
-            true,
+                .ToArray()
+            : analysis.Document.Lines
+                .Where(line => line.Quantity > QuantityTolerance)
+                .OrderBy(line => line.LineNo)
+                .Select(line => new CreateInterWarehouseShipmentLineRequest(
+                    line.StockCode,
+                    line.Quantity,
+                    WarehouseOrderLineGuid: null,
+                    UnitPrice: 0d,
+                    UnitPointer: 1,
+                    Description: analysis.Document.AxataDeliveryNo))
+                .ToArray();
+
+        return new(
+            analysis.Document.SourceWarehouseNo,
+            analysis.Document.TargetWarehouseNo,
+            TransitWarehouseNo,
+            shipmentDates.MovementDate,
+            shipmentDates.DocumentDate,
+            hasLinkedOrder ? "" : BuildC01TransferDocumentNo(analysis.Document.AxataSequenceNo),
+            analysis.Document.AxataDeliveryNo,
+            lines,
+            hasLinkedOrder,
+            ClientRequestId: BuildC01ClientRequestId(analysis.Document.AxataSequenceNo),
             RequestedByUserId: requestedByUserId,
-            AllowLinkedOrderOverDelivery: true);
+            AllowLinkedOrderOverDelivery: hasLinkedOrder,
+            DisableAutomaticWarehouseOrderCreation: !hasLinkedOrder);
+    }
+
+    internal static Guid BuildC01ClientRequestId(long axataSequenceNo)
+    {
+        var hash = System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes($"Furpa:Axata:C01:{axataSequenceNo}"));
+        return new Guid(hash.AsSpan(0, 16));
+    }
+
+    internal static string BuildC01TransferDocumentNo(long axataSequenceNo)
+    {
+        var value = $"C01-{axataSequenceNo}";
+        if (value.Length <= 16)
+        {
+            return value;
+        }
+
+        var hash = System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(value));
+        return $"C01-{Convert.ToHexString(hash.AsSpan(0, 6))}";
     }
 
     private static string BuildC01ShipmentCreatedMessage(
@@ -5094,6 +5404,11 @@ internal sealed class AxataOutboundDeliveryImportService(
         var statusMessage = acknowledged
             ? "olusturuldu ve AXATA ENT006.S06STAT=1 yapildi."
             : "olusturuldu; AXATA ack istenmedigi icin status degistirilmedi.";
+        if (analysis.MatchedLines.Count == 0)
+        {
+            return $"{prefix} siparis baglantisi olmadan tam AXATA fiziksel cikis miktariyla {statusMessage}";
+        }
+
         var excessQuantity = GetC01OverDeliveryQuantity(analysis.MatchedLines);
 
         return excessQuantity <= QuantityTolerance
@@ -6446,6 +6761,27 @@ internal sealed class AxataOutboundDeliveryImportService(
             message,
             document.AxataDate);
 
+    private static AxataOutboundDeliveryImportResultDto CreateExistingUnlinkedC01AcknowledgementResult(
+        C01DeliveryAnalysis analysis)
+    {
+        var existing = analysis.ExistingShipmentCheck.Match!;
+        return new AxataOutboundDeliveryImportResultDto(
+            analysis.Document.AxataSequenceNo,
+            analysis.Document.AxataDeliveryNo,
+            analysis.Document.DocumentSerie,
+            analysis.Document.DocumentOrderNo ?? 0,
+            existing.MovementDocumentSerie ?? string.Empty,
+            existing.MovementDocumentOrderNo ?? 0,
+            0,
+            0d,
+            true,
+            "Mikro sevk fisi depo, stok ve miktar iziyle dogrulandi; duplicate fis olusturulmadan AXATA ENT006.S06STAT=1 yapildi.",
+            analysis.Document.AxataDate,
+            existing.MovementDate,
+            existing.MovementDate,
+            existing.MovementDocumentNo);
+    }
+
     private static bool IsAxataCompletedC01ShipmentMissingMikro(C01DeliveryAnalysis analysis) =>
         analysis.Document.MovementType.Equals(C01MovementType, StringComparison.OrdinalIgnoreCase) &&
         IsCompletedStatus(analysis.Document.Status) &&
@@ -6468,7 +6804,9 @@ internal sealed class AxataOutboundDeliveryImportService(
         var quantity = document.Lines.Sum(line => line.Quantity);
         var warning = analysis.MikroCheckState switch
         {
-            "OrderNotFound" => "AXATA C01 sevki var ancak Mikro depolar arasi siparis bulunamadi; Mikro'ya sevk fisi otomatik baglanamaz.",
+            "OrderMissingReadyForImport" => "Mikro siparisi silinmis; AXATA fiziksel cikisi siparis baglantisiz Mikro sevk fisi olarak guvenle aktarilabilir.",
+            "OrderNotFound" => "AXATA C01 sevki var ancak Mikro depolar arasi siparis bulunamadi; guvenli aktarim kosullari saglanmadi.",
+            "ExistingMikroShipmentConflict" => "Ayni AXATA sira kimligiyle Mikro'da farkli satir veya miktarda sevk bulundu; manuel inceleme gerekir.",
             "OrderLineMismatch" => "AXATA C01 sevki var ancak satirlar Mikro siparis satirlariyla guvenli eslesmedi; manuel inceleme gerekir.",
             "ReadyForImport" => "AXATA C01 sevki Mikro'ya dusmemis; belge bazli C01 rescue ile Mikro sevk fisi olusturulabilir.",
             _ => "AXATA C01 sevki var ancak Mikro sevk linki STOK_HAREKETLERI_EK.sth_subesip_uid uzerinden bulunamadi."
@@ -6535,6 +6873,39 @@ internal sealed class AxataOutboundDeliveryImportService(
         }
 
         return true;
+    }
+
+    internal static bool ShipmentFingerprintMatches(
+        AxataOutboundDeliveryDocument document,
+        ExistingC01ShipmentCandidateDocument candidate)
+    {
+        var positiveLines = document.Lines
+            .Where(line => line.Quantity > QuantityTolerance)
+            .ToArray();
+        var axataQuantity = positiveLines.Sum(line => line.Quantity);
+
+        if (positiveLines.Length == 0 || HasQuantityDifference(axataQuantity, candidate.Quantity))
+        {
+            return false;
+        }
+
+        var axataQuantities = positiveLines
+            .GroupBy(line => NormalizeCode(line.StockCode), StringComparer.OrdinalIgnoreCase)
+            .Where(group => !string.IsNullOrWhiteSpace(group.Key))
+            .ToDictionary(
+                group => group.Key,
+                group => group.Sum(line => line.Quantity),
+                StringComparer.OrdinalIgnoreCase);
+        var shipmentQuantities = BuildStockQuantityMap(candidate.Lines);
+
+        if (axataQuantities.Count != shipmentQuantities.Count)
+        {
+            return false;
+        }
+
+        return axataQuantities.All(item =>
+            shipmentQuantities.TryGetValue(item.Key, out var shipmentQuantity) &&
+            !HasQuantityDifference(item.Value, shipmentQuantity));
     }
 
     private static bool CandidateDateMatches(
@@ -6798,7 +7169,16 @@ internal sealed record C01DeliveryAnalysis(
     AxataOutboundDeliveryDocument Document,
     AxataOutboundDeliveryImportDocumentDto ImportDto,
     IReadOnlyCollection<MatchedC01Line> MatchedLines,
-    string MikroCheckState);
+    string MikroCheckState,
+    C01ExistingShipmentCheck ExistingShipmentCheck);
+
+internal sealed record C01ExistingShipmentCheck(
+    ExistingC01ShipmentCandidateDocument? Match,
+    bool HasConflict,
+    string? Detail)
+{
+    public static C01ExistingShipmentCheck None { get; } = new(null, false, null);
+}
 
 internal sealed record C02DeliveryAnalysis(
     AxataOutboundDeliveryDocument Document,

@@ -61,6 +61,10 @@ internal abstract class AxataOutboundDeliveryImportTaskHandler(
                 artifacts);
         }
 
+        await documentStateService.ClearFailuresByExactReasonAsync(
+            Code,
+            RecoverableHistoricalFailureReasons,
+            cancellationToken);
         var deferredDocumentKeys = await documentStateService.GetDeferredDocumentKeysAsync(
             Code,
             cancellationToken);
@@ -115,6 +119,8 @@ internal abstract class AxataOutboundDeliveryImportTaskHandler(
         Guid requestedByUserId,
         CancellationToken cancellationToken);
 
+    protected virtual IReadOnlyCollection<string> RecoverableHistoricalFailureReasons => [];
+
     private static int GetBatchSize(AxataSynchronizationOptions currentOptions, string taskCode) =>
         currentOptions.Tasks.TryGetValue(taskCode, out var taskOptions)
             ? Math.Clamp(taskOptions.BatchSize, 1, 500)
@@ -140,6 +146,9 @@ internal sealed class C01OutboundDeliveryImportTaskHandler(
     public override string Code => "c01-outbound-delivery-import";
 
     protected override string MovementType => "C01";
+
+    protected override IReadOnlyCollection<string> RecoverableHistoricalFailureReasons =>
+        ["Mikro depolar arasi siparis bulunamadi."];
 
     protected override Task<AxataOutboundDeliveryImportPreviewDto> PreviewImportAsync(
         AxataOutboundDeliveryImportPreviewRequest request,

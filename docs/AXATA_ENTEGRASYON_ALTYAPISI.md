@@ -563,6 +563,8 @@ Import:
 
 - `take`, `continueOnError`, `acknowledge` alir.
 - Uygun C01 teslimatlarini Mikro depolar arasi sevk fisine cevirir.
+- Mikro siparisi silinmis fakat AXATA'da pozitif, iptal olmayan fiziksel cikis satirlari bulunan belge de aktarilabilir. Bu yolda yeni siparis acilmaz, siparis teslim miktari guncellenmez ve sevk satirlari siparis GUID'i olmadan yazilir.
+- Siparissiz kurtarma evraki `sth_belge_no=C01-{AXATA sequence}` izi ve ayni sequence'ten uretilen sabit `ClientRequestId` ile tekrar calismaya karsi korunur.
 - Mikro fis tarihi import gunudur. AXATA `ENT006.S06ITAR` dun/onceki gun olsa bile Mikro `STOK_HAREKETLERI.sth_tarih` ve `sth_belge_tarih` backendin Mikro'ya yazdigi gun olarak set edilir.
 - `acknowledge=true` ise Mikro yazim basarili olduktan sonra `updIntegrationTableAsync` ile `ENT006.S06STAT=1` yapar.
 - Mikro sevk linki zaten varsa duplicate fis acmaz; uygun durumda sadece ack atabilir.
@@ -572,14 +574,14 @@ Belge bazli rescue:
 - `sentWarehouseOrdersMissingMikroShipments` listesindeki `documentSerie/documentOrderNo` ile calisir.
 - AXATA ana servisten `OrderNumber=seri.sira`, `MovementType=C01` ile teslimat detayini arar.
 - `status` verilmezse once `0`, sonra `1` denenir.
-- AXATA teslimat satirlari Mikro siparis satirlariyla guvenli eslesirse ve teslim miktari Mikro kalan siparis miktarini asmazsa Mikro sevk fisi olusturur.
+- AXATA teslimat satirlari Mikro siparis satirlariyla guvenli eslesirse Mikro sevk fisi olusturur. Siparis silinmisse depo/stok/miktar imzasi ve AXATA sequence duplicate kontrolunden sonra siparis baglantisiz kurtarma yolu kullanilir.
 - `sentWarehouseOrdersWithShipmentDifferences` listesindeki belgeler kismi sevk/satir farki uyarisi olarak incelenir; otomatik rescue/import butonu burada acilmaz.
 - POST body: `{ "status": "1", "acknowledge": false }`; `acknowledge` default olarak kapali tutulmalidir.
 
 Guvenli sira:
 
 1. AXATA pending delivery okunur.
-2. Mikro siparis satiri ve depo uyumu dogrulanir.
+2. Mikro siparis satiri ve depo uyumu dogrulanir; siparis silinmisse mevcut Mikro sevk izi depo/stok/miktar bazinda aranir.
 3. Mikro sevk fisi yazilir.
 4. Link/kalan miktar kontrolleri tamamlanir.
 5. Istenirse AXATA ack atilir.
@@ -876,6 +878,7 @@ UI su ayrimi net yapmalidir:
 - Urun master task'i `Live` modunda `ENT004`, `ENT003_List` ve `ENT004_UNIT_List` iceren `addSKUMaster` paketlerini canli gonderir.
 - C01 ve G02 belge bazli rescue vardir; C02/C03/C4/G01 icin AXATA belge numarasi ile tek belge fetch/import endpoint'i yoktur.
 - C01 audit/panel iki ayri eksigi ayirir: gercekten Mikro sevk/link yoksa C01 import/rescue calistirilabilir; Mikro sipariste `ssip_teslim_miktar` doluysa veya mevcut sevk fisi bulunuyorsa otomatik import kapatilir ve belge manuel link/evrak izi incelemesine dusurulur.
+- Mikro siparisi sonradan silinmis C01 belgesinde AXATA fiziksel cikisi kaybolmaz: mevcut sevk yoksa `ImportWithoutOrder`, mevcut sevk varsa `ReconcileAndAcknowledge`, ayni sequence farkli icerikle bulunursa `InspectOnly` karari doner.
 - `AXATA teslim miktari Mikro siparis kalan miktarindan buyuk` hatasi genelde siparis teslim miktari zaten kapanmisken ayni AXATA sevkini tekrar Mikro'ya cevirmeye calismak anlamina gelir. Bu durumda ikinci sevk basilmamali; mevcut Mikro evragi ve `STOK_HAREKETLERI_EK.sth_subesip_uid` linki kontrol edilmelidir.
 - Mevcut C01 Mikro sevk aramasi performans icin `STOK_HAREKETLERI` uzerinde tarih, depo, hareket tipi ve stok kodu ile daraltilir; bellek tarafinda once aciklama=siparis no, sonra ayni stok/miktar imzasi eslestirilir. Pencere siparis tarihinden 1 gun once baslar ve 7 gun sonrasina kadar bakar.
 - EXT `getViewDataAsync` tabanli DynamicCensus import vardir; kalici inbox/retry tablosu yoktur.
@@ -921,6 +924,7 @@ C01 onizleme cevabindaki `mikroCheckState` gercek Mikro eslesme sonucunu, `allow
 arayuzun gosterebilecegi guvenli islemi belirtir:
 
 - `ImportToMikro`: Mikro sevk fisi olusturulabilir.
+- `ImportWithoutOrder`: Mikro siparisi silinmistir; AXATA fiziksel cikisi otomatik yeni siparis acilmadan ve teslim miktari guncellenmeden sevk fisine cevrilebilir.
 - `ReconcileAndAcknowledge`: Mikro sevk linki satir ve miktar bazinda vardir; duplicate fis
   olusturulmadan AXATA kuyrugu kapatilabilir.
 - `InspectOnly`: Otomatik yazma veya ack yapilmaz; kullanici evraki inceler.

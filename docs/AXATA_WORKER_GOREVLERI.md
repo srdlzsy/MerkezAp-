@@ -46,6 +46,8 @@ Mikro yazimi tamamlanmadan AXATA belgesi tamamlandi olarak isaretlenmez. AXATA'd
 
 Basarili C01, C02, C03, C4, G01 ve G02 Mikro belge islemleri Belge Akis Takibine AXATA dis belge numarasiyla yazilir.
 
+C01 kaynagindaki Mikro siparisi sonradan silinmisse worker fiziksel AXATA cikisini atlamaz. Mevcut Mikro sevki depo/stok/miktar ve AXATA sequence iziyle bulunamazsa otomatik yeni siparis acmadan baglantisiz sevk fisi yazar; mevcut fis varsa yalniz AXATA kuyrugunu kapatir.
+
 ## Sayim Gorevi
 
 | Gorev kodu | Hareket | Ne ise yarar? | Production durumu |

@@ -1589,7 +1589,8 @@ public sealed class CreateInterWarehouseShipmentUseCase(
         IReadOnlyList<CreateInterWarehouseShipmentLineRequest> lines)
     {
         var automationOptions = axataOptions.Value.WarehouseOrderAutomation;
-        if (GreenGrocerShipmentLineNormalizer.IsGreenGrocerSourceWarehouse(
+        if (request.DisableAutomaticWarehouseOrderCreation ||
+            GreenGrocerShipmentLineNormalizer.IsGreenGrocerSourceWarehouse(
                 request.SourceWarehouseNo,
                 ResolveGreenGrocerSourceWarehouseNo()) ||
             !automationOptions.Enabled ||
@@ -1646,7 +1647,8 @@ public sealed class CreateInterWarehouseShipmentUseCase(
         CancellationToken cancellationToken)
     {
         var automationOptions = axataOptions.Value.WarehouseOrderAutomation;
-        if (GreenGrocerShipmentLineNormalizer.IsGreenGrocerSourceWarehouse(
+        if (request.DisableAutomaticWarehouseOrderCreation ||
+            GreenGrocerShipmentLineNormalizer.IsGreenGrocerSourceWarehouse(
                 request.SourceWarehouseNo,
                 ResolveGreenGrocerSourceWarehouseNo()) ||
             !automationOptions.Enabled ||

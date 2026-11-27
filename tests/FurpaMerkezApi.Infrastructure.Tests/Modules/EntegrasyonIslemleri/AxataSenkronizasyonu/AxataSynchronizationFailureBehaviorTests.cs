@@ -111,6 +111,92 @@ public sealed class AxataSynchronizationFailureBehaviorTests
     }
 
     [Fact]
+    public void DeletedC01Order_BuildsIdempotentShipmentWithoutCreatingReplacementOrder()
+    {
+        var document = CreateC01Document(265235, new DateTime(2026, 11, 14));
+        var analysis = new C01DeliveryAnalysis(
+            document,
+            new AxataOutboundDeliveryImportDocumentDto(
+                document.AxataSequenceNo,
+                document.AxataDeliveryNo,
+                document.DocumentSerie,
+                document.DocumentOrderNo ?? 0,
+                document.MovementType,
+                document.Status,
+                document.SourceWarehouseNo,
+                document.TargetWarehouseNo,
+                document.AxataDate,
+                document.Lines.Count,
+                document.Lines.Sum(line => line.Quantity),
+                0,
+                0d,
+                0d,
+                0,
+                true,
+                "Mikro siparisi silinmis.",
+                "OrderMissingReadyForImport",
+                "ImportWithoutOrder"),
+            Array.Empty<MatchedC01Line>(),
+            "OrderMissingReadyForImport",
+            C01ExistingShipmentCheck.None);
+
+        var request = AxataOutboundDeliveryImportService.BuildCreateShipmentRequest(
+            analysis,
+            Guid.NewGuid(),
+            "axata");
+
+        Assert.False(request.UpdateLinkedOrderDeliveredQuantities);
+        Assert.True(request.DisableAutomaticWarehouseOrderCreation);
+        Assert.False(request.AllowLinkedOrderOverDelivery);
+        Assert.Equal("C01-265235", request.DocumentNo);
+        Assert.Equal(
+            AxataOutboundDeliveryImportService.BuildC01ClientRequestId(265235),
+            request.ClientRequestId);
+        var line = Assert.Single(request.Lines);
+        Assert.Null(line.WarehouseOrderLineGuid);
+        Assert.Equal("015681", line.StockCode);
+        Assert.Equal(1d, line.Quantity);
+    }
+
+    [Fact]
+    public void ExistingC01ShipmentFingerprint_MatchesCombinedStockQuantities()
+    {
+        var document = new AxataOutboundDeliveryDocument(
+            265235,
+            "F120.42",
+            "F120",
+            42,
+            "C01",
+            "0",
+            string.Empty,
+            string.Empty,
+            50,
+            120,
+            new DateTime(2026, 11, 14),
+            [
+                new AxataOutboundDeliveryLine(0, "015681", 1d),
+                new AxataOutboundDeliveryLine(1, "015681", 2d),
+                new AxataOutboundDeliveryLine(2, "015682", 4d)
+            ]);
+        var candidate = new ExistingC01ShipmentCandidateDocument(
+            "F120",
+            100,
+            "C01-265235",
+            new DateTime(2026, 11, 14),
+            "F120.42",
+            50,
+            120,
+            2,
+            7d,
+            [
+                new ExistingC01ShipmentCandidateLine("015681", 3d),
+                new ExistingC01ShipmentCandidateLine("015682", 4d)
+            ]);
+
+        Assert.True(AxataOutboundDeliveryImportService.ShipmentFingerprintMatches(document, candidate));
+    }
+
+    [Fact]
     public void ProductFailureMessage_ContainsProductAndServiceReason()
     {
         var results = new[]
