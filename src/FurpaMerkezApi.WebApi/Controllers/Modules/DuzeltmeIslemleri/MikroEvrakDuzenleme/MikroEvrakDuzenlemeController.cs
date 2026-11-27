@@ -1822,10 +1822,10 @@ public sealed class StockMovementDocumentLookupHttpRequest
     [Range(1, int.MaxValue)]
     public int? WarehouseNo { get; init; }
 
-    [Range(1, int.MaxValue)]
+    [Range(0, int.MaxValue)]
     public int? InputWarehouseNo { get; init; }
 
-    [Range(1, int.MaxValue)]
+    [Range(0, int.MaxValue)]
     public int? OutputWarehouseNo { get; init; }
 
     public bool HardDelete { get; init; }

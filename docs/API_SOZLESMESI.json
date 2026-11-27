@@ -66325,7 +66325,7 @@
             "in": "query",
             "schema": {
               "maximum": 2147483647,
-              "minimum": 1,
+              "minimum": 0,
               "type": "integer",
               "format": "int32"
             }
@@ -66335,7 +66335,7 @@
             "in": "query",
             "schema": {
               "maximum": 2147483647,
-              "minimum": 1,
+              "minimum": 0,
               "type": "integer",
               "format": "int32"
             }
@@ -66713,7 +66713,7 @@
             "in": "query",
             "schema": {
               "maximum": 2147483647,
-              "minimum": 1,
+              "minimum": 0,
               "type": "integer",
               "format": "int32"
             }
@@ -66723,7 +66723,7 @@
             "in": "query",
             "schema": {
               "maximum": 2147483647,
-              "minimum": 1,
+              "minimum": 0,
               "type": "integer",
               "format": "int32"
             }
@@ -66949,7 +66949,7 @@
             "in": "query",
             "schema": {
               "maximum": 2147483647,
-              "minimum": 1,
+              "minimum": 0,
               "type": "integer",
               "format": "int32"
             }
@@ -66959,7 +66959,7 @@
             "in": "query",
             "schema": {
               "maximum": 2147483647,
-              "minimum": 1,
+              "minimum": 0,
               "type": "integer",
               "format": "int32"
             }
@@ -142201,14 +142201,14 @@
           },
           "inputWarehouseNo": {
             "maximum": 2147483647,
-            "minimum": 1,
+            "minimum": 0,
             "type": "integer",
             "format": "int32",
             "nullable": true
           },
           "outputWarehouseNo": {
             "maximum": 2147483647,
-            "minimum": 1,
+            "minimum": 0,
             "type": "integer",
             "format": "int32",
             "nullable": true

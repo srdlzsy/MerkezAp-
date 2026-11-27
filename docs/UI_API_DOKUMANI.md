@@ -37362,11 +37362,11 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `documentSerie` | string | Evet | minLength=0; maxLength=20 |
 | `documentType` | integer (int32) | Hayir | min=0; max=255; nullable |
 | `hardDelete` | boolean | Hayir |  |
-| `inputWarehouseNo` | integer (int32) | Hayir | min=1; max=2147483647; nullable |
+| `inputWarehouseNo` | integer (int32) | Hayir | min=0; max=2147483647; nullable |
 | `movementKind` | integer (int32) | Hayir | min=0; max=255; nullable |
 | `movementType` | integer (int32) | Hayir | min=0; max=255; nullable |
 | `normalReturn` | integer (int32) | Hayir | min=0; max=255; nullable |
-| `outputWarehouseNo` | integer (int32) | Hayir | min=1; max=2147483647; nullable |
+| `outputWarehouseNo` | integer (int32) | Hayir | min=0; max=2147483647; nullable |
 | `warehouseNo` | integer (int32) | Hayir | min=1; max=2147483647; nullable |
 
 ### FurpaMerkezApi.WebApi.Controllers.Modules.DuzeltmeIslemleri.MikroEvrakDuzenleme.StockMovementHeaderPatchHttpRequest
