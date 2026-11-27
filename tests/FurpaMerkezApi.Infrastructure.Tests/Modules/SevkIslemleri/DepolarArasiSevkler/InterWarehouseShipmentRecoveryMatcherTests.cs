@@ -31,6 +31,11 @@ public sealed class InterWarehouseShipmentRecoveryMatcherTests
             allowLinkedOrderOverDelivery: true,
             requestedQuantity: 384d,
             remainingQuantity: 380d));
+        Assert.False(CreateInterWarehouseShipmentUseCase.IsLinkedOrderOverDeliveryBlocked(
+            allowLinkedOrderOverDelivery: false,
+            requestedQuantity: 384d,
+            remainingQuantity: 380d,
+            isGreenGrocerLine: true));
     }
 
     [Theory]

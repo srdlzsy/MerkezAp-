@@ -137274,6 +137274,9 @@
             "type": "number",
             "format": "double",
             "nullable": true
+          },
+          "isCaseCountEstimated": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false
@@ -137343,6 +137346,14 @@
           },
           "greenGrocerCase": {
             "$ref": "#/components/schemas/FurpaMerkezApi.Application.Modules.SiparisIslemleri.Common.WarehouseOrderLineGreenGrocerCaseDto"
+          },
+          "modelCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "barcode": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false

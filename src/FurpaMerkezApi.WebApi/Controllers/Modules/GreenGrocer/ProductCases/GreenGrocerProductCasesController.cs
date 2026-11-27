@@ -37,7 +37,7 @@ public sealed class GreenGrocerProductCasesController(
         var options = productCaseOptions.CurrentValue;
         return Ok(new GreenGrocerProductCaseCapabilitiesDto(
             options.Enabled,
-            options.Enabled && options.OrderLinkingEnabled && options.AuthDbTrackingEnabled,
+            options.Enabled && options.OrderLinkingEnabled,
             options.Enabled && options.RequireOrderUserManualApproval,
             options.Enabled && options.AuthDbProfileStorageEnabled,
             options.Enabled && options.AuthDbTrackingEnabled,

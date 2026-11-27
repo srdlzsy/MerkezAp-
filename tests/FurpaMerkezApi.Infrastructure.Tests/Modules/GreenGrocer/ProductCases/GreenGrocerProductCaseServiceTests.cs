@@ -56,6 +56,7 @@ public sealed class GreenGrocerProductCaseServiceTests
         Assert.Equal(GreenGrocerProductCaseModes.ConversionDirectQuantity, result.ConversionMode);
         Assert.Equal(30, result.EstimatedQuantity);
         Assert.Null(result.UnitsPerCase);
+        Assert.True(result.IsOrderLinkable);
         Assert.Contains(result.Warnings, warning => warning.Contains("otomatik uygulanmadi", StringComparison.Ordinal));
     }
 

@@ -10274,6 +10274,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `estimatedQuantity` | number (double) | Hayir |  |
 | `inputMode` | string | Hayir | nullable |
 | `inputQuantity` | number (double) | Hayir |  |
+| `isCaseCountEstimated` | boolean | Hayir |  |
 | `labelAgeDays` | integer (int32) | Hayir | nullable |
 | `manualApprovalConfirmed` | boolean | Hayir |  |
 | `microUnit` | string | Hayir | nullable |
@@ -10288,6 +10289,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
 |---|---|---|---|
+| `barcode` | string | Hayir | nullable |
 | `deliveredQuantity` | number (double) | Hayir |  |
 | `description` | string | Hayir | nullable |
 | `greenGrocerCase` | FurpaMerkezApi.Application.Modules.SiparisIslemleri.Common.WarehouseOrderLineGreenGrocerCaseDto | Hayir |  |
@@ -10295,6 +10297,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `lineAmount` | number (double) | Hayir |  |
 | `lineGuid` | string (uuid) | Hayir | nullable |
 | `lineNo` | integer (int32) | Hayir |  |
+| `modelCode` | string | Hayir | nullable |
 | `packageCode` | string | Hayir | nullable |
 | `projectCode` | string | Hayir | nullable |
 | `quantity` | number (double) | Hayir |  |

@@ -39,7 +39,10 @@ Ana config bolumu:
 {
   "GreenGrocerProductCases": {
     "Enabled": true,
-    "OrderLinkingEnabled": false,
+    "OrderLinkingEnabled": true,
+    "RequireOrderUserManualApproval": false,
+    "AuthDbProfileStorageEnabled": false,
+    "AuthDbTrackingEnabled": false,
     "SourceWarehouseNo": 56,
     "DefaultOverDeliveryTolerancePercent": 20,
     "SevereOverDeliveryMultiplier": 1.5
@@ -286,9 +289,9 @@ degisse bile o siparis icin sabit kalir.
 
 Varsayilan `20` ve kritik katsayi `1.5` ise, tahmini miktari `20 KG` olan satirda:
 
-- `24 KG` dahil normaldir.
-- `24 KG` ustu ve `30 KG` alti kullanici onayi ister.
-- `30 KG` ve ustu kritik kabul edilir; API sevki engeller.
+- `20 KG` ustunde kullaniciya miktar asimi uyarisi gosterilir.
+- `24 KG` ustu tolerans asimi, `30 KG` ve ustu kritik seviye olarak siniflanir.
+- Bu seviyeler operasyon gorunurlugu icindir; manav sevkini engellemez ve ek onay zorunlulugu getirmez.
 
 ## Resolution Preview Nasil Calisir?
 
@@ -452,7 +455,7 @@ Bu eski mantiktir.
 4. UI, `greenGrocerReferenceOrderLineGuid` ile siparis snapshot referansini
    korur. Bu alan Mikro siparis bagi degildir; yalniz tolerans ve denetim icindir.
 5. API kaynak/hedef depo, stok, tahmini miktar, tolerans ve kritik siniri tekrar
-   kontrol eder. Terminal kontrolu atlatilsa bile kritik sevk yazilmaz.
+   kontrol eder. Asim varsa loglar ancak sevki engellemez.
 6. Eski terminal yalniz `warehouseOrderLineGuid` gonderirse API, snapshot'i
    kendisi bulup denetim referansini tamamlar.
 7. Basarili sevk idempotent kaydedilir; sonraki kismi sevklerde onceki fiili
@@ -470,7 +473,7 @@ Bu yeni kontrollu baglama modudur.
 4. Backend siparis satirini bulur.
 5. Kaynak depo, hedef depo ve stok kodu eslesmesini kontrol eder.
 6. Siparis satiri kapali mi kontrol eder.
-7. Sevk miktari kalan miktardan fazla mi kontrol eder.
+7. Sevk miktari kalan miktardan fazlaysa uyari kaydi olusturur; manav satirini engellemez.
 8. Hareket olusurken siparis satiri GUID'i sevk hareketine baglanir.
 9. Database modunda `ssip_teslim_miktar` ve `ssip_kapat_fl` guncellenir.
 
@@ -512,9 +515,10 @@ ayri bir karar ve ayri test ister.
 - `OrderLinkingEnabled=false` ise manav sevkte `warehouseOrderLineGuid` gonderme.
 - Manav sevkte baglama durumundan bagimsiz olarak siparis satiri GUID'ini
   `greenGrocerReferenceOrderLineGuid` alaninda gonder.
-- Tolerans asildiysa terminal acik onay alip
-  `greenGrocerOverDeliveryConfirmed=true` gonderir.
-- Kritik sinir asildiginda terminal kaydi durdurur; API de ayni kurali tekrarlar.
+- Siparis KG veya tahmini kasa sayisi asildiysa terminal belirgin uyari gosterir;
+  kullanici sevki yine kaydedebilir.
+- `greenGrocerOverDeliveryConfirmed` geriye uyum icin sozlesmede kalir ancak
+  mevcut akista kayit icin zorunlu degildir.
 - Terminal onceki sevk, bu sevk ve toplam fiili miktari ayri gosterir.
 - `OrderLinkingEnabled=true` ve `isOrderLinkable=true` ise sevkte ilgili
   siparis satirinin `lineGuid` degerini `warehouseOrderLineGuid` olarak gonder.
@@ -526,15 +530,15 @@ ayri bir karar ve ayri test ister.
   temizlenir.
 - `greenGrocerReferenceOrderLineGuid`, Mikro bagi kapali olsa da silinmez ve
   snapshot tabanli sevk kontrolunde kullanilir.
-- Snapshot destek tablosu yoksa veya okunamazsa bu gelismis referans temizlenir;
-  sevk klasik Mikro kurallariyla devam eder. Mikro evraki destek tablosu
-  yuzunden engellenmez.
+- Snapshot destek tablosu kapaliysa veya okunamazsa siparis bilgisi Mikro'dan,
+  kasa tahmini canli etiket ortalamasindan okunur. Mikro siparis GUID'i korunur;
+  sevk destek tablosu yuzunden engellenmez.
 - Eski terminalin gonderdigi `warehouseOrderLineGuid`, uygun snapshot varsa
   backend tarafinda denetim referansina otomatik tamamlanir.
-- Tolerans ve kritik sinir, `actualShippedQuantity + bu sevk miktari` uzerinden
-  hesaplanir; sevki parcalara bolmek siniri atlatmaz.
-- Basarili sevkler `green_grocer_shipment_line_records` tablosuna idempotent
-  yazilir ve snapshot fiili toplami buradan guncellenir.
+- Auth DB takibi aciksa tolerans ve kritik sinir,
+  `actualShippedQuantity + bu sevk miktari` uzerinden hesaplanir; basarili sevk
+  kaydi idempotent tutulur. Takip kapaliysa Mikro siparis teslim miktari ana
+  kaynaktir ve islem normal devam eder.
 - `OrderLinkingEnabled=true` iken GUID korunur ama sadece UI gonderirse kullanilir.
 - 56 depo icin otomatik depo siparisi uretimi kapali kalir.
 - `outWarehouseNo=56` olan depo siparislerinde satir `greenGrocerCase` bilgisi
@@ -604,30 +608,25 @@ docs/MANAV_KASA_SIPARIS_SEVK_AKISI.md
 1. Ortalama yoksa otomatik KG hesaplamak dogru degildir.
    Bu durumda profil manuel tanimlanmali veya UI satir ekletmemelidir.
 
-2. `OrderLinkingEnabled=true` acilirsa standart Mikro kalan siparis kontrolu de
-   ek olarak calisir.
+2. `OrderLinkingEnabled=true` iken Mikro siparis bagi korunur. Manav satirinda
+   kalan miktar asimi uyari uretir fakat sevki durdurmaz.
 
 3. Siparis miktari ortalama KG ile olusturulup sevk gercek KG ile yapildigi icin
-   tolerans kontrolu aktif olarak uygulanir. Uyari kullanici onayi ister, kritik
-   fark her durumda engellenir.
+   fark normaldir. KG veya tahmini kasa asimi ekranda ve logda gorunur; kritik
+   seviye dahil sevk engellenmez.
 
-4. Snapshot yazimi Mikro siparisi olustuktan sonra Auth DB'ye yazilir. Mikro
-   siparis basarili olup snapshot yazimi teknik bir sebeple basarisiz kalirsa
-   siparis kaydi geri alinmaz; log uzerinden takip edilmelidir.
+4. Snapshot ve sevk takip tablolari opsiyoneldir. Kapali olduklarinda Mikro
+   siparisi ve sevk akisi calisir; yalniz gelismis tarihsel kasa takibi tutulmaz.
 
 5. Mikro API modunda teslim miktari/kapatma etkisi Mikro API tarafinin
    davranisina baglidir. Database modunda backend kendisi gunceller.
 
 ## Onerilen Devreye Alma Plani
 
-1. `Enabled=true`, `OrderLinkingEnabled=false` ile basla.
-2. UI sipariste `resolution-preview` kullanmaya baslasin.
-3. Kritik KG urunler icin profil tanimla.
-4. Raporlarda "sube kasa talebi" ve "tahmini KG/ADET" ayrimini dogrula.
-5. Bir veya iki sube ile `OrderLinkingEnabled=true` pilot yap.
-6. Sevkte kalan miktar/kapatma davranisini canli veriyle kontrol et.
-7. Tolerans, pilot sube kapsami ve sevk kapatma kurallarina gore sonraki fazi
-   netlestir.
+1. `Enabled=true`, `OrderLinkingEnabled=true` ile kasa hesabi ve Mikro siparis bagini ac.
+2. Auth DB profil/takip bayraklarini ihtiyaca gore ac; kapali olmalari operasyona engel degildir.
+3. UI sipariste kasa talebi ile tahmini KG'yi, sevkte ise gercek okutulan KG ile tahmini kasa sayisini birlikte gostersin.
+4. KG/kasa asim uyarilarini ve Mikro teslim miktari etkisini canli veriyle izle.
 
 ## Kapsamli Commit Onerisi
 

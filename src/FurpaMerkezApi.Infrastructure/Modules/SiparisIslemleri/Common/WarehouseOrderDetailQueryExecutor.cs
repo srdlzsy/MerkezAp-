@@ -1,5 +1,7 @@
+using FurpaMerkezApi.Application.Modules.GreenGrocer.ProductCases;
 using FurpaMerkezApi.Application.Modules.SiparisIslemleri.Common;
 using FurpaMerkezApi.Infrastructure.Modules.GreenGrocer.ProductCases;
+using FurpaMerkezApi.Infrastructure.Modules.SevkIslemleri.DepolarArasiSevkler.Create;
 using FurpaMerkezApi.Infrastructure.Persistence;
 using FurpaMerkezApi.Infrastructure.Persistence.Mikro;
 using Microsoft.EntityFrameworkCore;
@@ -12,7 +14,8 @@ public sealed class WarehouseOrderDetailQueryExecutor(
     MikroDbContext mikroDbContext,
     AuthDbContext authDbContext,
     ILogger<WarehouseOrderDetailQueryExecutor> logger,
-    IOptionsMonitor<GreenGrocerProductCaseOptions>? greenGrocerOptions = null)
+    IOptionsMonitor<GreenGrocerProductCaseOptions>? greenGrocerOptions = null,
+    IGreenGrocerProductCaseService? greenGrocerProductCaseService = null)
 {
     private const double QuantityTolerance = 0.000001d;
 
@@ -72,6 +75,7 @@ public sealed class WarehouseOrderDetailQueryExecutor(
                 order.ssip_satirno,
                 order.ssip_stok_kod,
                 StockName = stock.sto_isim,
+                ModelCode = stock.sto_model_kodu,
                 stock.sto_birim1_ad,
                 stock.sto_birim2_ad,
                 stock.sto_birim3_ad,
@@ -95,10 +99,6 @@ public sealed class WarehouseOrderDetailQueryExecutor(
         {
             throw new KeyNotFoundException("Warehouse order detail was not found.");
         }
-
-        var greenGrocerCaseByLineGuid = await GetGreenGrocerCaseByLineGuidAsync(
-            rows.Select(row => row.ssip_Guid).ToArray(),
-            cancellationToken);
 
         var headerCount = rows
             .Select(row => new
@@ -129,6 +129,43 @@ public sealed class WarehouseOrderDetailQueryExecutor(
         var normalizedDocumentSerie = firstRow.ssip_evrakno_seri ?? documentSerie;
         var normalizedDocumentOrderNo = firstRow.ssip_evrakno_sira ?? request.DocumentOrderNo;
 
+        var greenGrocerCaseByLineGuid = await GetGreenGrocerCaseByLineGuidAsync(
+            rows.Select(row => row.ssip_Guid).ToArray(),
+            cancellationToken);
+        await AddLiveGreenGrocerCaseEstimatesAsync(
+            rows.Select(row => new LiveGreenGrocerOrderLine(
+                row.ssip_Guid,
+                row.ssip_stok_kod ?? string.Empty,
+                row.ModelCode ?? string.Empty,
+                row.ssip_miktar ?? 0d,
+                row.ssip_teslim_miktar ?? 0d)).ToArray(),
+            greenGrocerCaseByLineGuid,
+            outWarehouseNo,
+            inWarehouseNo,
+            firstRow.ssip_tarih,
+            cancellationToken);
+        var stockCodes = rows
+            .Select(row => row.ssip_stok_kod)
+            .Where(stockCode => !string.IsNullOrWhiteSpace(stockCode))
+            .Select(stockCode => stockCode!.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var barcodeRows = await mikroDbContext.BARKOD_TANIMLARIs
+            .AsNoTracking()
+            .Where(barcode =>
+                barcode.bar_stokkodu != null &&
+                stockCodes.Contains(barcode.bar_stokkodu) &&
+                barcode.bar_kodu != null &&
+                barcode.bar_kodu != string.Empty)
+            .Select(barcode => new { barcode.bar_stokkodu, barcode.bar_kodu })
+            .ToListAsync(cancellationToken);
+        var barcodeByStockCode = barcodeRows
+            .GroupBy(row => row.bar_stokkodu!.Trim(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(row => row.bar_kodu!.Trim()).OrderBy(value => value).FirstOrDefault() ?? string.Empty,
+                StringComparer.OrdinalIgnoreCase);
+
         var items = rows
             .Select(row =>
             {
@@ -155,7 +192,9 @@ public sealed class WarehouseOrderDetailQueryExecutor(
                     row.ssip_aciklama ?? string.Empty,
                     row.ssip_paket_kod ?? string.Empty,
                     row.ssip_projekodu ?? string.Empty,
-                    greenGrocerCaseByLineGuid.GetValueOrDefault(row.ssip_Guid));
+                    greenGrocerCaseByLineGuid.GetValueOrDefault(row.ssip_Guid),
+                    row.ModelCode ?? string.Empty,
+                    barcodeByStockCode.GetValueOrDefault(row.ssip_stok_kod?.Trim() ?? string.Empty, string.Empty));
             })
             .ToArray();
 
@@ -184,7 +223,7 @@ public sealed class WarehouseOrderDetailQueryExecutor(
         return new WarehouseOrderDetailDto(header, items);
     }
 
-    private async Task<IReadOnlyDictionary<Guid, WarehouseOrderLineGreenGrocerCaseDto>> GetGreenGrocerCaseByLineGuidAsync(
+    private async Task<Dictionary<Guid, WarehouseOrderLineGreenGrocerCaseDto>> GetGreenGrocerCaseByLineGuidAsync(
         IReadOnlyCollection<Guid> lineGuids,
         CancellationToken cancellationToken)
     {
@@ -283,6 +322,97 @@ public sealed class WarehouseOrderDetailQueryExecutor(
         }
     }
 
+    private async Task AddLiveGreenGrocerCaseEstimatesAsync(
+        IReadOnlyCollection<LiveGreenGrocerOrderLine> lines,
+        IDictionary<Guid, WarehouseOrderLineGreenGrocerCaseDto> casesByLineGuid,
+        int sourceWarehouseNo,
+        int targetWarehouseNo,
+        DateTime? orderDate,
+        CancellationToken cancellationToken)
+    {
+        var options = greenGrocerOptions?.CurrentValue;
+        if (options is not { Enabled: true } ||
+            greenGrocerProductCaseService is null ||
+            sourceWarehouseNo != options.SourceWarehouseNo)
+        {
+            return;
+        }
+
+        foreach (var line in lines)
+        {
+            if (casesByLineGuid.ContainsKey(line.LineGuid) ||
+                line.Quantity <= QuantityTolerance ||
+                !GreenGrocerShipmentLineNormalizer.IsGreenGrocerModelCode(line.ModelCode))
+            {
+                continue;
+            }
+
+            try
+            {
+                var resolution = await greenGrocerProductCaseService.PreviewResolutionAsync(
+                    new GreenGrocerProductCaseResolutionRequest(
+                        line.StockCode,
+                        1d,
+                        sourceWarehouseNo,
+                        targetWarehouseNo,
+                        orderDate),
+                    cancellationToken);
+
+                if (!resolution.IsUsable ||
+                    resolution.AverageKgPerCase is not > QuantityTolerance ||
+                    !string.Equals(resolution.MicroUnit, "KG", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var estimatedCaseCount = line.Quantity / resolution.AverageKgPerCase.Value;
+                var deliveredCaseCount = line.DeliveredQuantity / resolution.AverageKgPerCase.Value;
+                casesByLineGuid[line.LineGuid] = new WarehouseOrderLineGreenGrocerCaseDto(
+                    Round(estimatedCaseCount),
+                    GreenGrocerProductCaseModes.InputCase,
+                    resolution.ConversionMode,
+                    Round(line.Quantity),
+                    resolution.MicroUnit,
+                    RoundOrNull(resolution.AverageKgPerCase),
+                    RoundOrNull(resolution.UnitsPerCase),
+                    resolution.AverageSource,
+                    resolution.AverageRecordCount,
+                    resolution.AverageCaseCount,
+                    RoundOrNull(resolution.CoefficientOfVariation),
+                    resolution.Confidence,
+                    false,
+                    resolution.IsOrderLinkable,
+                    Round(resolution.OverDeliveryTolerancePercent),
+                    Round(resolution.SevereOverDeliveryMultiplier),
+                    Round(line.DeliveredQuantity),
+                    Round(deliveredCaseCount),
+                    "LiveEstimate",
+                    resolution.CalculationTier,
+                    resolution.AverageWindowDaysUsed,
+                    resolution.LabelAgeDays,
+                    RoundOrNull(resolution.PriorAverageKgPerCase),
+                    resolution.DriftPercent.HasValue
+                        ? Math.Round(resolution.DriftPercent.Value, 1, MidpointRounding.AwayFromZero)
+                        : null,
+                    false,
+                    null,
+                    true);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                logger.LogWarning(
+                    exception,
+                    "Manav siparis kasa tahmini uretilemedi; satir Mikro miktariyla dondurulecek. LineGuid={LineGuid}, StockCode={StockCode}",
+                    line.LineGuid,
+                    line.StockCode);
+            }
+        }
+    }
+
     private static byte NormalizeUnitPointer(byte? unitPointer) =>
         unitPointer is >= 1 and <= 4 ? unitPointer.Value : (byte)1;
 
@@ -305,4 +435,11 @@ public sealed class WarehouseOrderDetailQueryExecutor(
 
     private static double? RoundOrNull(double? value) =>
         value.HasValue ? Round(value.Value) : null;
+
+    private sealed record LiveGreenGrocerOrderLine(
+        Guid LineGuid,
+        string StockCode,
+        string ModelCode,
+        double Quantity,
+        double DeliveredQuantity);
 }

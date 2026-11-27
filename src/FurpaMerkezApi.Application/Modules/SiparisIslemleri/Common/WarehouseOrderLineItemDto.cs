@@ -16,7 +16,9 @@ public sealed record WarehouseOrderLineItemDto(
     string Description,
     string PackageCode,
     string ProjectCode,
-    WarehouseOrderLineGreenGrocerCaseDto? GreenGrocerCase = null);
+    WarehouseOrderLineGreenGrocerCaseDto? GreenGrocerCase = null,
+    string ModelCode = "",
+    string Barcode = "");
 
 public sealed record WarehouseOrderLineGreenGrocerCaseDto(
     double InputQuantity,
@@ -44,4 +46,5 @@ public sealed record WarehouseOrderLineGreenGrocerCaseDto(
     double? PriorAverageKgPerCase = null,
     double? DriftPercent = null,
     bool ManualApprovalConfirmed = false,
-    double? ApprovedKgPerCase = null);
+    double? ApprovedKgPerCase = null,
+    bool IsCaseCountEstimated = false);

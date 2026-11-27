@@ -4289,7 +4289,9 @@ Feature flag:
 {
   "GreenGrocerProductCases": {
     "Enabled": true,
-    "OrderLinkingEnabled": false
+    "OrderLinkingEnabled": true,
+    "AuthDbProfileStorageEnabled": false,
+    "AuthDbTrackingEnabled": false
   }
 }
 ```
@@ -4298,12 +4300,15 @@ Feature flag:
 - Ortam degiskeni ile kapatma: `GreenGrocerProductCases__Enabled=false`
 - `Enabled=false` ise bu bolumdeki endpointler `409 Conflict` doner ve detay mesajinda ozelligin konfigurasyonla kapali oldugu belirtilir.
 - UI kapali durumda `resolution-preview` cagirmamali, profil ekranini gizlemeli ve eski manav siparis/sevk akisini kullanmaya devam etmelidir.
-- Varsayilan `OrderLinkingEnabled=false`; manav sevkte siparis GUID'i gelse bile eski davranis korunur ve GUID temizlenir.
-- Siparise bagli manav sevk istenirse `GreenGrocerProductCases__OrderLinkingEnabled=true` yapilir. Bu ayar ancak `Enabled=true` iken anlamlidir.
+- Varsayilan `OrderLinkingEnabled=true`; manav sevkte gercek Mikro siparis GUID'i korunur. Bu ayar ancak `Enabled=true` iken anlamlidir.
+- `AuthDbProfileStorageEnabled` ve `AuthDbTrackingEnabled` opsiyoneldir. Kapali olmalarinda profil/snapshot gecmisi tutulmaz; Mikro siparisine bagli sevk, canli kasa tahmini ve normal evrak yazimi calismaya devam eder.
 - `OrderLinkingEnabled=true` iken `resolution-preview` response'undaki `isOrderLinkable=true` ise UI ilgili siparis satirinin `lineGuid` degerini sevk request satirinda `warehouseOrderLineGuid` olarak gonderebilir.
 - Bu ayar otomatik depo siparisi uretmez; yalnizca UI'nin gonderdigi gercek siparis satiri GUID'inin korunup sevke baglanmasini saglar.
 - `OrderLinkingEnabled=false` iken UI manav sevkinde siparis secme/kalan siparis kapatma akisiyle ugrasmamalidir; sadece barkod/etiket okutulan gercek KG/ADET miktariyla siparissiz sevk yapmalidir.
 - `OrderLinkingEnabled=true` iken manav depo gelen siparis detayi `items[].greenGrocerCase` dolu gelen satirlari "kasa talebi + tahmini KG/ADET" olarak gosterir ve UI sevkte bu satirin `lineGuid` degerini tasiyabilir.
+- Siparis detayi satirinda `modelCode`, tercih edilen `barcode` ve `greenGrocerCase.isCaseCountEstimated` alanlari bulunabilir. Snapshot yoksa API etiket ortalamasindan tahmini kasa sayisini canli hesaplar.
+- Manav sevkinde miktar alani siparisten otomatik doldurulmaz; gercek KG/ADET barkod/etiket okumasindan veya kullanici girisinden gelir.
+- Gercek toplam siparis KG'sini veya tahmini kasa sayisini asarsa UI uyari gosterir. API de durumu loglar ancak sevki engellemez.
 
 Cozumleme siniflari:
 
@@ -7071,8 +7076,11 @@ UI kullanim notlari:
 - Depolar arasi siparise bagli parcali sevk akisi icin UI, sevk satiri hazirlarken `items[].quantity` yerine `items[].remainingQuantity` alanini esas almalidir. `remainingQuantity <= 0` veya `isClosed = true` olan satirlar sevk satiri secimine tekrar getirilmemeli, sadece gecmis/bilgi olarak gosterilmelidir.
 - Depo siparis detayi parcali sevk sonrasinda satir bazinda `deliveredQuantity`, `remainingQuantity` ve `isClosed` alanlarini guncel doner. UI kalan sevk ekranini acmadan once detayi yeniden okumali; kullaniciya varsayilan sevk miktari olarak kalan miktari onermelidir.
 - `items[].greenGrocerCase` doluysa satir manav kasa/koli cozumleme snapshot'i ile olusmustur. UI manav depo gelen siparisinde bu satiri "3 kasa ~= 11.25 KG, ort 3.75 KG/kasa" gibi gostermelidir.
+- Auth DB snapshot takibi kapaliysa API ayni alani Mikro siparis miktari ve canli etiket ortalamasindan `isCaseCountEstimated=true` ile uretebilir.
 - `OrderLinkingEnabled=false` ise UI bu `lineGuid` bilgisini manav sevke tasimaz; satir sadece bilgilendirme/rapor icin kullanilir.
 - `OrderLinkingEnabled=true` ise UI manav sevkte ayni satirin `lineGuid` degerini `warehouseOrderLineGuid` olarak gonderir ve gercek sevk miktarini okutulan KG/ADET olarak yollar.
+- Satir kartinda barkod, siparis KG ve tahmini kasa tek satirlik ozet olarak gosterilir. Siparis KG/tahmini kasa sevk miktari olarak otomatik yazilmaz.
+- Siparis KG veya tahmini kasa asimi belirgin bir uyaridir; kaydetme aksiyonunu kapatmaz.
 
 ## Sevk Islemleri
 
@@ -36024,6 +36032,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `estimatedQuantity` | number (double) | Hayir |  |
 | `inputMode` | string | Hayir | nullable |
 | `inputQuantity` | number (double) | Hayir |  |
+| `isCaseCountEstimated` | boolean | Hayir |  |
 | `labelAgeDays` | integer (int32) | Hayir | nullable |
 | `manualApprovalConfirmed` | boolean | Hayir |  |
 | `microUnit` | string | Hayir | nullable |
@@ -36038,6 +36047,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
 |---|---|---|---|
+| `barcode` | string | Hayir | nullable |
 | `deliveredQuantity` | number (double) | Hayir |  |
 | `description` | string | Hayir | nullable |
 | `greenGrocerCase` | FurpaMerkezApi.Application.Modules.SiparisIslemleri.Common.WarehouseOrderLineGreenGrocerCaseDto | Hayir |  |
@@ -36045,6 +36055,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `lineAmount` | number (double) | Hayir |  |
 | `lineGuid` | string (uuid) | Hayir | nullable |
 | `lineNo` | integer (int32) | Hayir |  |
+| `modelCode` | string | Hayir | nullable |
 | `packageCode` | string | Hayir | nullable |
 | `projectCode` | string | Hayir | nullable |
 | `quantity` | number (double) | Hayir |  |

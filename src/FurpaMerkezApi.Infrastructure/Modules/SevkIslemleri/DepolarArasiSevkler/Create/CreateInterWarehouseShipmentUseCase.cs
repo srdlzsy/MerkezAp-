@@ -1613,8 +1613,7 @@ public sealed class CreateInterWarehouseShipmentUseCase(
     {
         var currentOptions = greenGrocerProductCaseOptions.CurrentValue;
         return currentOptions.Enabled &&
-               currentOptions.OrderLinkingEnabled &&
-               currentOptions.AuthDbTrackingEnabled;
+               currentOptions.OrderLinkingEnabled;
     }
 
     private int ResolveGreenGrocerSourceWarehouseNo()
@@ -1715,6 +1714,29 @@ public sealed class CreateInterWarehouseShipmentUseCase(
             .Where(order => linkedGuids.Contains(order.ssip_Guid))
             .ToDictionaryAsync(order => order.ssip_Guid, cancellationToken);
 
+        var greenGrocerStockCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (GreenGrocerShipmentLineNormalizer.IsGreenGrocerSourceWarehouse(
+                request.SourceWarehouseNo,
+                ResolveGreenGrocerSourceWarehouseNo()))
+        {
+            var linkedStockCodes = orderLines.Values
+                .Select(order => order.ssip_stok_kod?.Trim())
+                .Where(stockCode => !string.IsNullOrWhiteSpace(stockCode))
+                .Select(stockCode => stockCode!)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            var linkedStocks = await mikroWriteDbContext.STOKLARs
+                .AsNoTracking()
+                .Where(stock => linkedStockCodes.Contains(stock.sto_kod))
+                .Select(stock => new { stock.sto_kod, stock.sto_model_kodu })
+                .ToListAsync(cancellationToken);
+            greenGrocerStockCodes.UnionWith(
+                linkedStocks
+                    .Where(stock => GreenGrocerShipmentLineNormalizer.IsGreenGrocerModelCode(stock.sto_model_kodu))
+                    .Select(stock => stock.sto_kod)
+                    .Where(stockCode => !string.IsNullOrWhiteSpace(stockCode))!);
+        }
+
         var missingGuid = linkedGuids.FirstOrDefault(guid => !orderLines.ContainsKey(guid));
         if (missingGuid != Guid.Empty)
         {
@@ -1728,6 +1750,9 @@ public sealed class CreateInterWarehouseShipmentUseCase(
             var orderLine = orderLines[group.Key];
             var requestedQuantity = group.Sum(line => line.Quantity);
             var remainingQuantity = (orderLine.ssip_miktar ?? 0d) - (orderLine.ssip_teslim_miktar ?? 0d);
+            var isGreenGrocerLine = group.Any(line =>
+                    line.GreenGrocerReferenceOrderLineGuid == group.Key) ||
+                greenGrocerStockCodes.Contains(orderLine.ssip_stok_kod?.Trim() ?? string.Empty);
 
             if (orderLine.ssip_girdepo != request.TargetWarehouseNo ||
                 orderLine.ssip_cikdepo != request.SourceWarehouseNo)
@@ -1747,7 +1772,8 @@ public sealed class CreateInterWarehouseShipmentUseCase(
             if (IsLinkedOrderOverDeliveryBlocked(
                     request.AllowLinkedOrderOverDelivery,
                     requestedQuantity,
-                    remainingQuantity))
+                    remainingQuantity,
+                    isGreenGrocerLine))
             {
                 throw new InvalidOperationException(
                     "Shipment quantity can not be greater than linked warehouse order remaining quantity.");
@@ -1756,7 +1782,8 @@ public sealed class CreateInterWarehouseShipmentUseCase(
             if (requestedQuantity > remainingQuantity)
             {
                 logger.LogWarning(
-                    "Linked warehouse order over-delivery was explicitly allowed. OrderLineGuid={OrderLineGuid}, StockCode={StockCode}, RequestedQuantity={RequestedQuantity}, RemainingQuantity={RemainingQuantity}, ExcessQuantity={ExcessQuantity}, SourceWarehouseNo={SourceWarehouseNo}, TargetWarehouseNo={TargetWarehouseNo}",
+                    "Linked warehouse order over-delivery continued with warning. IsGreenGrocerLine={IsGreenGrocerLine}, OrderLineGuid={OrderLineGuid}, StockCode={StockCode}, RequestedQuantity={RequestedQuantity}, RemainingQuantity={RemainingQuantity}, ExcessQuantity={ExcessQuantity}, SourceWarehouseNo={SourceWarehouseNo}, TargetWarehouseNo={TargetWarehouseNo}",
+                    isGreenGrocerLine,
                     orderLine.ssip_Guid,
                     orderLine.ssip_stok_kod,
                     requestedQuantity,
@@ -1785,8 +1812,11 @@ public sealed class CreateInterWarehouseShipmentUseCase(
     internal static bool IsLinkedOrderOverDeliveryBlocked(
         bool allowLinkedOrderOverDelivery,
         double requestedQuantity,
-        double remainingQuantity) =>
-        !allowLinkedOrderOverDelivery && requestedQuantity > remainingQuantity;
+        double remainingQuantity,
+        bool isGreenGrocerLine = false) =>
+        !isGreenGrocerLine &&
+        !allowLinkedOrderOverDelivery &&
+        requestedQuantity > remainingQuantity;
 
     private async Task ValidateLinkedOrdersBeforeReservationAsync(
         CreateInterWarehouseShipmentRequest request,
@@ -1915,7 +1945,10 @@ public sealed class CreateInterWarehouseShipmentUseCase(
         {
             if (!snapshots.TryGetValue(group.Key, out var snapshot))
             {
-                throw new KeyNotFoundException($"Green grocer order line reference was not found: {group.Key}");
+                logger.LogWarning(
+                    "Manav sevk snapshot kaydi bulunamadi; Mikro siparis baglantisi ile sevke devam edilecek. OrderLineGuid={OrderLineGuid}",
+                    group.Key);
+                continue;
             }
 
             if (snapshot.SourceWarehouseNo != request.SourceWarehouseNo ||
@@ -1937,14 +1970,20 @@ public sealed class CreateInterWarehouseShipmentUseCase(
             var expectedQuantity = snapshot.EstimatedQuantity;
             var warningLimit = expectedQuantity * (1d + (snapshot.OverDeliveryTolerancePercent / 100d));
             var criticalLimit = expectedQuantity * snapshot.SevereOverDeliveryMultiplier;
-            var confirmed = group.All(line => line.GreenGrocerOverDeliveryConfirmed);
+            var currentShipmentCaseCount = group.Sum(line => line.GreenGrocerActualCaseCount.GetValueOrDefault());
+            var previousShipmentCaseCount = snapshot.ActualShippedCaseCount.GetValueOrDefault();
+            var actualCaseCount = previousShipmentCaseCount + currentShipmentCaseCount;
+            var expectedCaseCount = snapshot.InputQuantity;
 
             if (expectedQuantity <= 0d || criticalLimit <= warningLimit)
             {
-                throw new OperationConflictException(
-                    OperationConflictErrorCodes.MikroDocumentContentMismatch,
-                    "Manav siparis tolerans bilgisi gecersiz. Profil ve siparis satirini kontrol edin.",
-                    retryable: false);
+                logger.LogWarning(
+                    "Manav siparis tolerans bilgisi gecersiz; sevk engellenmeden devam edecek. StockCode={StockCode}, ExpectedQuantity={ExpectedQuantity}, WarningLimit={WarningLimit}, CriticalLimit={CriticalLimit}",
+                    snapshot.StockCode,
+                    expectedQuantity,
+                    warningLimit,
+                    criticalLimit);
+                continue;
             }
 
             var severity = EvaluateGreenGrocerShipmentSeverity(
@@ -1953,22 +1992,22 @@ public sealed class CreateInterWarehouseShipmentUseCase(
                 snapshot.OverDeliveryTolerancePercent,
                 snapshot.SevereOverDeliveryMultiplier);
 
-            if (severity == GreenGrocerShipmentSeverity.Critical)
+            var quantityExceeded = actualQuantity > expectedQuantity;
+            var caseCountExceeded = expectedCaseCount > 0d && actualCaseCount > expectedCaseCount;
+            if (quantityExceeded || caseCountExceeded ||
+                severity != GreenGrocerShipmentSeverity.Normal ||
+                snapshot.RequiresManualApproval)
             {
-                throw new OperationConflictException(
-                    OperationConflictErrorCodes.GreenGrocerOverDeliveryCritical,
-                    $"Manav sevki kritik siniri asiyor: {snapshot.StockCode}, beklenen {expectedQuantity:N3} {snapshot.MicroUnit}, onceki sevk {previousShipmentQuantity:N3}, bu sevk {currentShipmentQuantity:N3}, toplam {actualQuantity:N3} {snapshot.MicroUnit}, kritik sinir {criticalLimit:N3} {snapshot.MicroUnit}. Miktari duzeltmeden sevk olusturulamaz.",
-                    retryable: false);
-            }
-
-            if ((severity == GreenGrocerShipmentSeverity.ConfirmationRequired ||
-                 snapshot.RequiresManualApproval) &&
-                !confirmed)
-            {
-                throw new OperationConflictException(
-                    OperationConflictErrorCodes.GreenGrocerOverDeliveryConfirmationRequired,
-                    $"Manav sevki kullanici onayi gerektiriyor: {snapshot.StockCode}, beklenen {expectedQuantity:N3} {snapshot.MicroUnit}, onceki sevk {previousShipmentQuantity:N3}, bu sevk {currentShipmentQuantity:N3}, toplam {actualQuantity:N3} {snapshot.MicroUnit}, toleransli ust sinir {warningLimit:N3} {snapshot.MicroUnit}.",
-                    retryable: false);
+                logger.LogWarning(
+                    "Manav siparisli sevk miktari uyarisi; sevk engellenmeden devam edecek. StockCode={StockCode}, Severity={Severity}, ExpectedQuantity={ExpectedQuantity}, ActualQuantity={ActualQuantity}, ExpectedCaseCount={ExpectedCaseCount}, ActualCaseCount={ActualCaseCount}, QuantityExceeded={QuantityExceeded}, CaseCountExceeded={CaseCountExceeded}",
+                    snapshot.StockCode,
+                    severity,
+                    expectedQuantity,
+                    actualQuantity,
+                    expectedCaseCount,
+                    actualCaseCount,
+                    quantityExceeded,
+                    caseCountExceeded);
             }
         }
     }

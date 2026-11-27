@@ -757,8 +757,7 @@ public sealed class GreenGrocerProductCaseService(
             confidence,
             requiresManualApproval && options.CurrentValue.RequireOrderUserManualApproval,
             isOrderLinkable &&
-            options.CurrentValue.OrderLinkingEnabled &&
-            options.CurrentValue.AuthDbTrackingEnabled,
+            options.CurrentValue.OrderLinkingEnabled,
             ResolveDefaultOverDeliveryTolerancePercent(),
             ResolveSevereOverDeliveryMultiplier(),
             isUsable,
