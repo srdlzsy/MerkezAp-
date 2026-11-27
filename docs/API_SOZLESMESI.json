@@ -128188,6 +128188,29 @@
               "type": "string"
             },
             "nullable": true
+          },
+          "alreadyInMicro": {
+            "type": "boolean"
+          },
+          "existingMicroDocument": {
+            "type": "string",
+            "nullable": true
+          },
+          "suggestedDocumentSeries": {
+            "type": "string",
+            "nullable": true
+          },
+          "suggestedDocumentOrderNo": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "canTransferToMicro": {
+            "type": "boolean"
+          },
+          "microTransferMessage": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -146344,6 +146367,18 @@
             "type": "string",
             "nullable": true
           },
+          "invoiceUuid": {
+            "maxLength": 50,
+            "minLength": 0,
+            "type": "string",
+            "nullable": true
+          },
+          "invoiceDocumentId": {
+            "maxLength": 25,
+            "minLength": 0,
+            "type": "string",
+            "nullable": true
+          },
           "mikroUserNo": {
             "maximum": 32767,
             "minimum": 0,
@@ -146434,7 +146469,6 @@
       "FurpaMerkezApi.WebApi.Controllers.Modules.KasaIslemleri.ManavMalKabulVeEtiket.SaveManavMalKabulVeEtiketAcceptanceRecordHttpRequest": {
         "required": [
           "caseType",
-          "documentNo",
           "receivedBy",
           "stockBarcode",
           "stockCode",
@@ -146463,7 +146497,8 @@
           "documentNo": {
             "maxLength": 25,
             "minLength": 0,
-            "type": "string"
+            "type": "string",
+            "nullable": true
           },
           "stockCode": {
             "maxLength": 25,

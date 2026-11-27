@@ -339,8 +339,8 @@ Body:
 {
   "supplierCode": "120.001",
   "supplierName": "TEDARIKCI A",
-  "documentSeries": "MNV",
-  "documentNo": "12345",
+  "documentSeries": null,
+  "documentNo": null,
   "stockCode": "MNV001",
   "stockName": "MNV DOMATES",
   "stockBarcode": "1234567",
@@ -357,7 +357,11 @@ Notlar:
 
 - `caseType` olarak `REHINLI`, `REHINSIZ` ve Turkce karakterli varyasyonlar kabul edilir; response tablo degeriyle uyumlu normalize edilmis kasa tipini doner.
 - Yeni kayit `Mikro_Aktarildi = 0` olarak acilir.
-- `documentSeries` bos gelirse `MNV` kabul edilir.
+- `documentSeries` ve `documentNo` opsiyoneldir. Kullanici yalniz tartim kaydi ve etiket
+  olusturacaksa bu alanlari bos birakabilir; bu durum Mikro aktarimi baslatmaz.
+- Kayit bir fatura ile iliskilendirilecekse seri/no doldurulabilir. Mikro aktariminda esas
+  kimlik secili e-faturanin `invoiceUuid` (ETTN) ve `invoiceDocumentId` (GIB belge no)
+  alanlaridir.
 - Aktarilmis kayit guncellenemez ve silinemez.
 
 Guncelleme:
@@ -576,9 +580,10 @@ Status degerleri:
 bu canli manav mal kabul formatindan okunur; genel stok hareketleriyle
 karismasinin onune gecilir.
 
-## Mikro Mal Kabul Olusturma
+## Mikro Alis Faturasi Olusturma
 
-Canli Mikro'ya manav mal kabul belgesi yazar:
+Canli Mikro'ya stok girisi ile tedarikci cari hareketini birlikte iceren tam alis faturasi
+yazar. Bu endpoint etiket kaydetme veya yalniz irsaliye olusturma endpointi degildir:
 
 ```http
 POST /api/kasa-islemleri/manav-mal-kabul-etiket/micro/goods-receipts
@@ -590,9 +595,11 @@ Body:
 {
   "date": "2026-08-13",
   "supplierCode": "32000297",
-  "documentSeries": "MNV26",
-  "documentOrderNo": null,
-  "documentNo": null,
+  "documentSeries": "CFA26",
+  "documentOrderNo": 18914,
+  "documentNo": "CFA2026000018914",
+  "invoiceUuid": "4A8B190F-5C5E-4F3C-BFA1-25A7E7F33D42",
+  "invoiceDocumentId": "CFA2026000018914",
   "mikroUserNo": 15,
   "description": "Manav mal kabul",
   "markAcceptanceRecordsTransferred": true,
@@ -615,7 +622,14 @@ Body:
 Alan kurallari:
 
 - `date` ve `supplierCode` zorunludur.
-- `documentSeries` bos gelirse `MNV` kullanilir.
+- `invoiceUuid`, Uyumsoft e-faturasinin ETTN degeridir. Mikro `cha_uuid` alanina yazilir
+  ve ayni faturanin ikinci kez aktarilmasini engelleyen birincil kontroldur.
+- `invoiceDocumentId`, 16 haneli GIB belge numarasidir. Uygunsa Mikro seri/sira bilgisi
+  otomatik uretilir: ilk 3 karakter + yilin son 2 hanesi seri, son 9 hane sira olur.
+- Uretilen seri/sira doluysa `CFA261`, `CFA262` gibi ilk bos seri kullanilir. Kontrol hem
+  stok hem cari hareketlerinde yapilir.
+- Resmi e-fatura kimligi yoksa `documentSeries/documentOrderNo/documentNo` manuel
+  fallback olarak kullanilir; seri de bos ise `MNV` kullanilir.
 - `documentOrderNo` bos gelirse ayni seri icin canli Mikro'daki son siranin
   bir fazlasi uretilir.
 - `documentNo` bos gelirse `documentOrderNo` metni kullanilir.
@@ -633,7 +647,9 @@ UI satir hazirlama kurali:
 
 - `supplierCode`: fatura detayindaki `matchedSupplierCode`; bos ise kullanicinin sectigi tedarikci.
 - `date`: fatura `issueDate` veya kullanicinin mal kabul tarihi.
-- `documentNo`: fatura `invoiceId`/resmi belge no; manuel akista kullanicinin girdigi belge no.
+- `invoiceUuid`: fatura detayindaki ETTN (`invoiceId`).
+- `invoiceDocumentId`: fatura detayindaki resmi GIB belge numarasi (`documentId`).
+- `documentNo`: yalniz manuel/faturasiz fallback akista kullanicinin girdigi belge no.
 - `stockCode`: once `lines[].matchedStockCode`; bos ise kullanicinin stok aramasiyla sectigi MNV stok kodu.
 - `quantity`: kesin kabul miktari. Manavda bu alan genelde tartim/etiket kaydindaki `netReceivedWeight` toplamidir; fatura miktari sadece varsayilan/oneri gibi gosterilebilir.
 - `unitPrice`: fatura detay satirindaki `unitPrice`; manuel akista kullanici girer.
@@ -647,7 +663,7 @@ Mikro aktarim butonu su kosullarda acilmalidir:
 - Tedarikci secili veya `matchedSupplierCode` dolu olmali.
 - Aktarilacak her satirda `stockCode` dolu olmali.
 - `quantity > 0` olmali.
-- `unitPrice >= 0` olmali; fiyat bilinmiyorsa kullanici onayi alinmadan aktarim acilmamali.
+- `unitPrice > 0` olmali; fiyat bilinmiyorsa aktarim acilmamali.
 - `taxPointer` veya `taxRatePercent` bilinmeli; ikisi de yoksa UI KDV bilgisini uyarili gostermeli.
 - Etiket kaydiyla bagli aktarim yapiliyorsa `acceptanceRecordId` dolu olmali.
 
@@ -689,11 +705,16 @@ sth_eticaret_kanal_kodu = FRMNV{yyMMdd}{hash}
 Notlar:
 
 - Alternatif doviz kuru Mikro `fn_KurBul(date, fn_FirmaAlternatifDovizCinsi(), 1)` fonksiyonundan okunur.
-- `offlineTraceKey` Mikro kolon uzunluguna uygun kisa izdir; `FRMNV{yyMMdd}{hash}` formatinda uretilir ve hem cari baslikta hem stok satirlarinda saklanir.
+- `offlineTraceKey` Mikro kolon uzunluguna uygun kisa izdir; tarih, tedarikci,
+  evrak seri ve sira bilgisinden `FRMNV{yyMMdd}{hash}` formatinda uretilir. Hem cari
+  baslikta hem stok satirlarinda saklanir; ayni gunun farkli faturalari ayni izi kullanmaz.
 - UI bu endpointi sadece kullanici mal kabul/fatura kontrolunu bitirdikten sonra cagirir; etiket/tartim kaydi kendi basina Mikro mal kabul anlamina gelmez.
 
 Duplicate korumasi:
 
+- ETTN doluysa iptal olmayan Mikro cari hareketlerinde `cha_uuid` kontrol edilir. Kayit
+  varsa API `409 Conflict` doner; ikinci stok ve cari hareket olusturulmaz.
+- ETTN bulunmadiginda ayni tedarikci + resmi belge no kontrolu ek guvence saglar.
 - Ayni `date + documentSeries + documentOrderNo + tip/cins/evraktip + depo`
   kombinasyonunda daha once hareket varsa API `409 Conflict` doner.
 - Evrak sira uretimi ve insert ayni Mikro transaction'i icinde

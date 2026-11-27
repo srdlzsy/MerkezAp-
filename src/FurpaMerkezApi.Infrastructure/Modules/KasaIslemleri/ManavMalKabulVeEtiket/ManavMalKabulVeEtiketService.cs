@@ -5,6 +5,7 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Xml.Linq;
+using FurpaMerkezApi.Application.Common.Errors;
 using FurpaMerkezApi.Application.Modules.EntegrasyonIslemleri.UyumsoftServisleri;
 using FurpaMerkezApi.Application.Modules.KasaIslemleri.ManavMalKabulVeEtiket;
 using FurpaMerkezApi.Infrastructure.Modules.Common;
@@ -330,6 +331,11 @@ public sealed partial class ManavMalKabulVeEtiketService(
 
         var packagingSummary = ReadInvoicePackagingSummary(invoice);
         var lines = await ReadInvoiceLinesAsync(invoice, cancellationToken);
+        var microInvoiceState = await ResolveMicroInvoiceStateAsync(
+            invoiceId,
+            documentId,
+            matchedSupplier?.SupplierCode,
+            cancellationToken);
         var warnings = new List<string>();
         if (cachedInvoice is null)
         {
@@ -344,6 +350,13 @@ public sealed partial class ManavMalKabulVeEtiketService(
         if (lines.Count == 0)
         {
             warnings.Add("Fatura XML icinde okunabilir kalem bulunamadi.");
+        }
+
+        if (microInvoiceState.AlreadyInMicro)
+        {
+            warnings.Add(
+                $"Bu e-fatura Mikro'da {microInvoiceState.ExistingMicroDocument} evraki olarak zaten kayitli. " +
+                "Yeni alim faturasi olusturulamaz.");
         }
 
         return new ManavMalKabulVeEtiketInvoiceDetailDto(
@@ -367,7 +380,15 @@ public sealed partial class ManavMalKabulVeEtiketService(
             matchedSupplier?.SupplierName,
             matchedSupplier is not null && lines.Any(line => line.CanCreateAcceptance),
             lines,
-            warnings);
+            warnings,
+            microInvoiceState.AlreadyInMicro,
+            microInvoiceState.ExistingMicroDocument,
+            microInvoiceState.SuggestedDocumentSeries,
+            microInvoiceState.SuggestedDocumentOrderNo,
+            !microInvoiceState.AlreadyInMicro,
+            microInvoiceState.AlreadyInMicro
+                ? $"Fatura Mikro'da {microInvoiceState.ExistingMicroDocument} olarak zaten kayitli."
+                : "Fatura Mikro'ya aktarilmaya hazir.");
     }
 
     public ManavMalKabulVeEtiketCalculationDto Calculate(ManavMalKabulVeEtiketCalculationRequest request) =>
@@ -1106,9 +1127,7 @@ public sealed partial class ManavMalKabulVeEtiketService(
         }
 
         var now = DateTime.Now;
-        var documentSeries = normalized.DocumentSeries ?? "MNV";
         var createUserNo = Convert.ToInt16(normalized.MikroUserNo ?? DefaultMikroUserNo);
-        var offlineTraceKey = BuildOfflineTraceKey(normalized.Date, normalized.SupplierCode, documentSeries);
         var executionStrategy = mikroWriteDbContext.Database.CreateExecutionStrategy();
 
         var writeResult = await executionStrategy.ExecuteAsync(async () =>
@@ -1122,9 +1141,16 @@ public sealed partial class ManavMalKabulVeEtiketService(
 
             try
             {
-                var documentOrderNo = normalized.DocumentOrderNo
-                                      ?? await GetNextMicroGoodsReceiptOrderNoAsync(documentSeries, cancellationToken);
-                var documentNo = NormalizeOrNull(normalized.DocumentNo) ?? documentOrderNo.ToString();
+                await ThrowIfMicroInvoiceAlreadyExistsAsync(normalized, cancellationToken);
+                var identity = await ResolveMicroGoodsReceiptIdentityAsync(normalized, cancellationToken);
+                var documentSeries = identity.DocumentSeries;
+                var documentOrderNo = identity.DocumentOrderNo;
+                var documentNo = identity.DocumentNo;
+                var offlineTraceKey = BuildOfflineTraceKey(
+                    normalized.Date,
+                    normalized.SupplierCode,
+                    documentSeries,
+                    documentOrderNo);
 
                 var duplicateExists = await mikroWriteDbContext.STOK_HAREKETLERIs
                     .AnyAsync(movement =>
@@ -1138,10 +1164,19 @@ public sealed partial class ManavMalKabulVeEtiketService(
                             movement.sth_giris_depo_no == GreenGrocerWarehouseNo &&
                             movement.sth_cikis_depo_no == MainWarehouseNo,
                         cancellationToken);
+                duplicateExists = duplicateExists || await mikroWriteDbContext.CARI_HESAP_HAREKETLERIs
+                    .AnyAsync(movement =>
+                            movement.cha_iptal != true &&
+                            movement.cha_evrak_tip == GreenGrocerCustomerInvoiceDocumentType &&
+                            movement.cha_evrakno_seri == documentSeries &&
+                            movement.cha_evrakno_sira == documentOrderNo,
+                        cancellationToken);
                 if (duplicateExists)
                 {
-                    throw new InvalidOperationException(
-                        $"Mikro manav mal kabul belgesi zaten var: {documentSeries}/{documentOrderNo}.");
+                    throw new OperationConflictException(
+                        OperationConflictErrorCodes.MikroDocumentIdentityConflict,
+                        $"Mikro belge seri ve sira numarasi zaten kullaniliyor: {documentSeries}/{documentOrderNo}.",
+                        retryable: false);
                 }
 
                 var invoiceGuid = Guid.NewGuid();
@@ -1150,6 +1185,7 @@ public sealed partial class ManavMalKabulVeEtiketService(
                         normalized,
                         line,
                         stockInfos[line.StockCode],
+                        supplier.cari_odemeplan_no ?? 0,
                         invoiceGuid,
                         documentSeries,
                         documentOrderNo,
@@ -1229,7 +1265,7 @@ public sealed partial class ManavMalKabulVeEtiketService(
                     updatedAcceptanceRecordCount,
                     offlineTraceKey,
                     resultLines);
-                return (Response: response, ExpectedRows: movementRows);
+                return (Response: response, ExpectedRows: movementRows, OfflineTraceKey: offlineTraceKey);
             }
             catch
             {
@@ -1246,7 +1282,7 @@ public sealed partial class ManavMalKabulVeEtiketService(
             writeResult.ExpectedRows,
             stockInfos,
             createUserNo,
-            offlineTraceKey,
+            writeResult.OfflineTraceKey,
             writeResult.Response.UpdatedAcceptanceRecordCount,
             CancellationToken.None);
         return verified ?? throw StockMovementRecoveryMatcher.OutcomeUnconfirmed();
@@ -1893,11 +1929,186 @@ public sealed partial class ManavMalKabulVeEtiketService(
         return rows.ToDictionary(row => row.StockCode, StringComparer.OrdinalIgnoreCase);
     }
 
+    private async Task<MicroInvoiceState> ResolveMicroInvoiceStateAsync(
+        string? invoiceUuid,
+        string? invoiceDocumentId,
+        string? supplierCode,
+        CancellationToken cancellationToken)
+    {
+        GreenGrocerInvoiceIdentity.TryNormalizeInvoiceUuid(invoiceUuid, out var normalizedInvoiceUuid);
+        var normalizedDocumentId = NormalizeOrNull(invoiceDocumentId)?.ToUpperInvariant();
+        var normalizedSupplierCode = NormalizeOrNull(supplierCode);
+        var existing = await FindExistingMicroInvoiceAsync(
+            normalizedInvoiceUuid,
+            normalizedDocumentId,
+            normalizedSupplierCode,
+            cancellationToken);
+        if (existing is not null)
+        {
+            return new MicroInvoiceState(
+                true,
+                existing.Series + "/" + existing.OrderNo,
+                null,
+                null);
+        }
+
+        if (!GreenGrocerInvoiceIdentity.TryParseOfficialDocumentNo(normalizedDocumentId, out var officialIdentity))
+        {
+            return new MicroInvoiceState(false, null, null, null);
+        }
+
+        var series = await FindAvailableMicroGoodsReceiptSeriesAsync(
+            officialIdentity.BaseSeries,
+            officialIdentity.DocumentOrderNo,
+            cancellationToken);
+        return new MicroInvoiceState(
+            false,
+            null,
+            series,
+            officialIdentity.DocumentOrderNo);
+    }
+
+    private async Task<ExistingMicroInvoice?> FindExistingMicroInvoiceAsync(
+        string? invoiceUuid,
+        string? invoiceDocumentId,
+        string? supplierCode,
+        CancellationToken cancellationToken)
+    {
+        var query = mikroWriteDbContext.CARI_HESAP_HAREKETLERIs
+            .AsNoTracking()
+            .Where(movement =>
+                movement.cha_iptal != true &&
+                movement.cha_evrak_tip == GreenGrocerCustomerInvoiceDocumentType &&
+                movement.cha_cinsi == GreenGrocerCustomerInvoiceGenre);
+
+        if (invoiceUuid is not null)
+        {
+            var byUuid = await query
+                .Where(movement => movement.cha_uuid == invoiceUuid)
+                .OrderByDescending(movement => movement.cha_create_date)
+                .Select(movement => new ExistingMicroInvoice(
+                    movement.cha_evrakno_seri ?? string.Empty,
+                    movement.cha_evrakno_sira ?? 0))
+                .FirstOrDefaultAsync(cancellationToken);
+            if (byUuid is not null)
+            {
+                return byUuid;
+            }
+        }
+
+        if (invoiceDocumentId is null || supplierCode is null)
+        {
+            return null;
+        }
+
+        return await query
+            .Where(movement =>
+                movement.cha_kod == supplierCode &&
+                movement.cha_belge_no == invoiceDocumentId)
+            .OrderByDescending(movement => movement.cha_create_date)
+            .Select(movement => new ExistingMicroInvoice(
+                movement.cha_evrakno_seri ?? string.Empty,
+                movement.cha_evrakno_sira ?? 0))
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    private async Task ThrowIfMicroInvoiceAlreadyExistsAsync(
+        ManavMalKabulVeEtiketCreateMicroGoodsReceiptRequest request,
+        CancellationToken cancellationToken)
+    {
+        var existing = await FindExistingMicroInvoiceAsync(
+            request.InvoiceUuid,
+            request.InvoiceDocumentId,
+            request.SupplierCode,
+            cancellationToken);
+        if (existing is null)
+        {
+            return;
+        }
+
+        throw new OperationConflictException(
+            OperationConflictErrorCodes.MikroOfficialDocumentAlreadyReceived,
+            $"Bu e-fatura Mikro'da {existing.Series}/{existing.OrderNo} evraki olarak zaten kayitli. " +
+            "Ikinci stok girisi ve cari hareket olusturulmadi.",
+            retryable: false);
+    }
+
+    private async Task<MicroGoodsReceiptIdentity> ResolveMicroGoodsReceiptIdentityAsync(
+        ManavMalKabulVeEtiketCreateMicroGoodsReceiptRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (GreenGrocerInvoiceIdentity.TryParseOfficialDocumentNo(
+                request.InvoiceDocumentId,
+                out var officialIdentity))
+        {
+            var availableSeries = await FindAvailableMicroGoodsReceiptSeriesAsync(
+                officialIdentity.BaseSeries,
+                officialIdentity.DocumentOrderNo,
+                cancellationToken);
+            return new MicroGoodsReceiptIdentity(
+                availableSeries,
+                officialIdentity.DocumentOrderNo,
+                officialIdentity.OfficialDocumentNo);
+        }
+
+        var documentSeries = request.DocumentSeries ?? DefaultStockPrefix;
+        var documentOrderNo = request.DocumentOrderNo
+                              ?? await GetNextMicroGoodsReceiptOrderNoAsync(documentSeries, cancellationToken);
+        var documentNo = request.InvoiceDocumentId
+                         ?? request.DocumentNo
+                         ?? documentOrderNo.ToString(CultureInfo.InvariantCulture);
+        return new MicroGoodsReceiptIdentity(documentSeries, documentOrderNo, documentNo);
+    }
+
+    private async Task<string> FindAvailableMicroGoodsReceiptSeriesAsync(
+        string baseSeries,
+        int documentOrderNo,
+        CancellationToken cancellationToken)
+    {
+        var stockSeries = await mikroWriteDbContext.STOK_HAREKETLERIs
+            .AsNoTracking()
+            .Where(movement =>
+                movement.sth_iptal != true &&
+                movement.sth_evraktip == GreenGrocerGoodsReceiptDocumentType &&
+                movement.sth_evrakno_sira == documentOrderNo &&
+                movement.sth_evrakno_seri != null &&
+                movement.sth_evrakno_seri.StartsWith(baseSeries))
+            .Select(movement => movement.sth_evrakno_seri!)
+            .Distinct()
+            .ToArrayAsync(cancellationToken);
+        var customerSeries = await mikroWriteDbContext.CARI_HESAP_HAREKETLERIs
+            .AsNoTracking()
+            .Where(movement =>
+                movement.cha_iptal != true &&
+                movement.cha_evrak_tip == GreenGrocerCustomerInvoiceDocumentType &&
+                movement.cha_evrakno_sira == documentOrderNo &&
+                movement.cha_evrakno_seri != null &&
+                movement.cha_evrakno_seri.StartsWith(baseSeries))
+            .Select(movement => movement.cha_evrakno_seri!)
+            .Distinct()
+            .ToArrayAsync(cancellationToken);
+
+        var occupiedSeries = stockSeries
+            .Concat(customerSeries)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        for (var suffix = 0; suffix < 1000; suffix++)
+        {
+            var candidate = GreenGrocerInvoiceIdentity.BuildCandidateSeries(baseSeries, suffix);
+            if (!occupiedSeries.Contains(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"GIB belge numarasi icin bos Mikro seri bulunamadi: {baseSeries}/{documentOrderNo}.");
+    }
+
     private async Task<int> GetNextMicroGoodsReceiptOrderNoAsync(
         string documentSeries,
         CancellationToken cancellationToken)
     {
-        var currentMax = await mikroWriteDbContext.STOK_HAREKETLERIs
+        var stockCurrentMax = await mikroWriteDbContext.STOK_HAREKETLERIs
             .Where(movement =>
                 movement.sth_tip == IncomingMovementType &&
                 movement.sth_cins == GreenGrocerGoodsReceiptGenre &&
@@ -1905,8 +2116,14 @@ public sealed partial class ManavMalKabulVeEtiketService(
                 movement.sth_evraktip == GreenGrocerGoodsReceiptDocumentType &&
                 movement.sth_evrakno_seri == documentSeries)
             .MaxAsync(movement => movement.sth_evrakno_sira, cancellationToken);
+        var customerCurrentMax = await mikroWriteDbContext.CARI_HESAP_HAREKETLERIs
+            .Where(movement =>
+                movement.cha_evrak_tip == GreenGrocerCustomerInvoiceDocumentType &&
+                movement.cha_evrakno_seri == documentSeries)
+            .MaxAsync(movement => movement.cha_evrakno_sira, cancellationToken);
 
-        return currentMax.HasValue ? currentMax.Value + 1 : FirstDocumentOrderNo;
+        var currentMax = Math.Max(stockCurrentMax ?? FirstDocumentOrderNo - 1, customerCurrentMax ?? FirstDocumentOrderNo - 1);
+        return currentMax + 1;
     }
 
     private async Task<double> GetAlternativeCurrencyRateAsync(
@@ -1960,6 +2177,7 @@ public sealed partial class ManavMalKabulVeEtiketService(
         ManavMalKabulVeEtiketCreateMicroGoodsReceiptRequest request,
         ManavMalKabulVeEtiketCreateMicroGoodsReceiptLineRequest line,
         MicroStockInfo stockInfo,
+        int paymentPlanNo,
         Guid invoiceGuid,
         string documentSeries,
         int documentOrderNo,
@@ -2039,7 +2257,7 @@ public sealed partial class ManavMalKabulVeEtiketService(
             sth_stok_doviz_cinsi = 0,
             sth_stok_doviz_kuru = 1d,
             sth_miktar = quantity,
-            sth_miktar2 = 0d,
+            sth_miktar2 = quantity,
             sth_birim_pntr = MikroUnitPointers.Primary,
             sth_tutar = amount,
             sth_iskonto1 = 0d,
@@ -2057,15 +2275,15 @@ public sealed partial class ManavMalKabulVeEtiketService(
             sth_masraf_vergi_pntr = 0,
             sth_masraf_vergi = 0d,
             sth_netagirlik = 0d,
-            sth_odeme_op = 0,
+            sth_odeme_op = paymentPlanNo,
             sth_aciklama = NormalizeText(line.Description ?? request.Description, 50),
             sth_sip_uid = Guid.Empty,
             sth_fat_uid = invoiceGuid,
             sth_giris_depo_no = GreenGrocerWarehouseNo,
             sth_cikis_depo_no = MainWarehouseNo,
             sth_malkbl_sevk_tarihi = request.Date,
-            sth_cari_srm_merkezi = string.Empty,
-            sth_stok_srm_merkezi = string.Empty,
+            sth_cari_srm_merkezi = GreenGrocerWarehouseNo.ToString(CultureInfo.InvariantCulture),
+            sth_stok_srm_merkezi = GreenGrocerWarehouseNo.ToString(CultureInfo.InvariantCulture),
             sth_fis_tarihi = MikroEmptyDate,
             sth_fis_sirano = 0,
             sth_vergisiz_fl = false,
@@ -2255,7 +2473,7 @@ public sealed partial class ManavMalKabulVeEtiketService(
             cha_e_islem_turu = 0,
             cha_fatura_belge_turu = GreenGrocerCustomerInvoiceDocumentKind,
             cha_diger_belge_adi = string.Empty,
-            cha_uuid = Guid.NewGuid().ToString().ToUpperInvariant(),
+            cha_uuid = request.InvoiceUuid ?? Guid.NewGuid().ToString("D").ToUpperInvariant(),
             cha_adres_no = ResolveSupplierInvoiceAddressNo(supplier),
             cha_vergifon_toplam = 0d,
             cha_ilk_belge_tarihi = request.Date,
@@ -2352,8 +2570,10 @@ public sealed partial class ManavMalKabulVeEtiketService(
 
         var supplierCode = NormalizeOrNull(request.SupplierCode)
             ?? throw new ArgumentException("Supplier code is required.", nameof(request.SupplierCode));
-        var documentSeries = NormalizeText(NormalizeOrNull(request.DocumentSeries) ?? "MNV", 25);
+        var documentSeries = NormalizeText(NormalizeOrNull(request.DocumentSeries), 25);
         var documentNo = NormalizeText(request.DocumentNo, 25);
+        var invoiceUuid = GreenGrocerInvoiceIdentity.NormalizeInvoiceUuid(request.InvoiceUuid);
+        var invoiceDocumentId = NormalizeText(NormalizeOrNull(request.InvoiceDocumentId)?.ToUpperInvariant(), 25);
         var description = NormalizeText(request.Description, 50);
         if (request.MikroUserNo is < 0 or > short.MaxValue)
         {
@@ -2372,6 +2592,8 @@ public sealed partial class ManavMalKabulVeEtiketService(
             SupplierCode = supplierCode,
             DocumentSeries = documentSeries,
             DocumentNo = documentNo,
+            InvoiceUuid = invoiceUuid,
+            InvoiceDocumentId = invoiceDocumentId,
             Description = description,
             Lines = normalizedLines
         };
@@ -2780,9 +3002,13 @@ public sealed partial class ManavMalKabulVeEtiketService(
             : 0m;
     }
 
-    private static string BuildOfflineTraceKey(DateTime date, string supplierCode, string documentSeries)
+    private static string BuildOfflineTraceKey(
+        DateTime date,
+        string supplierCode,
+        string documentSeries,
+        int documentOrderNo)
     {
-        var value = $"FURPA-MNV-{date:yyyyMMdd}-{supplierCode}-{documentSeries}";
+        var value = $"FURPA-MNV-{date:yyyyMMdd}-{supplierCode}-{documentSeries}-{documentOrderNo}";
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)))[..8];
         return $"FRMNV{date:yyMMdd}{hash}";
     }
@@ -2794,9 +3020,8 @@ public sealed partial class ManavMalKabulVeEtiketService(
             ?? throw new ArgumentException("Supplier code is required.", nameof(request.SupplierCode));
         var supplierName = NormalizeOrNull(request.SupplierName)
             ?? throw new ArgumentException("Supplier name is required.", nameof(request.SupplierName));
-        var documentSeries = NormalizeOrNull(request.DocumentSeries) ?? "MNV";
-        var documentNo = NormalizeOrNull(request.DocumentNo)
-            ?? throw new ArgumentException("Document no is required.", nameof(request.DocumentNo));
+        var documentSeries = NormalizeOrNull(request.DocumentSeries) ?? string.Empty;
+        var documentNo = NormalizeOrNull(request.DocumentNo) ?? string.Empty;
         var stockCode = NormalizeOrNull(request.StockCode)
             ?? throw new ArgumentException("Stock code is required.", nameof(request.StockCode));
         var stockName = NormalizeOrNull(request.StockName)
@@ -3111,6 +3336,19 @@ public sealed partial class ManavMalKabulVeEtiketService(
         string StockCode,
         string StockName,
         int WholesaleTaxPointer);
+
+    private sealed record ExistingMicroInvoice(string Series, int OrderNo);
+
+    private sealed record MicroInvoiceState(
+        bool AlreadyInMicro,
+        string? ExistingMicroDocument,
+        string? SuggestedDocumentSeries,
+        int? SuggestedDocumentOrderNo);
+
+    private sealed record MicroGoodsReceiptIdentity(
+        string DocumentSeries,
+        int DocumentOrderNo,
+        string DocumentNo);
 
     private sealed record SupplierInvoiceMatch(
         string SupplierCode,

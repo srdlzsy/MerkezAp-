@@ -86,7 +86,13 @@ public sealed record ManavMalKabulVeEtiketInvoiceDetailDto(
     string? MatchedSupplierName,
     bool CanStartAcceptance,
     IReadOnlyCollection<ManavMalKabulVeEtiketInvoiceLineDto> Lines,
-    IReadOnlyCollection<string> Warnings);
+    IReadOnlyCollection<string> Warnings,
+    bool AlreadyInMicro,
+    string? ExistingMicroDocument,
+    string? SuggestedDocumentSeries,
+    int? SuggestedDocumentOrderNo,
+    bool CanTransferToMicro,
+    string? MicroTransferMessage);
 
 public sealed record ManavMalKabulVeEtiketInvoiceLineDto(
     int LineNo,
@@ -281,7 +287,9 @@ public sealed record ManavMalKabulVeEtiketCreateMicroGoodsReceiptRequest(
     int? MikroUserNo,
     string? Description,
     bool MarkAcceptanceRecordsTransferred,
-    IReadOnlyCollection<ManavMalKabulVeEtiketCreateMicroGoodsReceiptLineRequest> Lines);
+    IReadOnlyCollection<ManavMalKabulVeEtiketCreateMicroGoodsReceiptLineRequest> Lines,
+    string? InvoiceUuid,
+    string? InvoiceDocumentId);
 
 public sealed record ManavMalKabulVeEtiketCreateMicroGoodsReceiptLineRequest(
     int? AcceptanceRecordId,

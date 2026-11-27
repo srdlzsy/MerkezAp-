@@ -7384,10 +7384,13 @@ Enum degerleri JSON sozlesmesinde bulunur.
 
 | JSON alani | Tip | Zorunlu | Sinirlar |
 |---|---|---|---|
+| `alreadyInMicro` | boolean | Hayir |  |
 | `canStartAcceptance` | boolean | Hayir |  |
+| `canTransferToMicro` | boolean | Hayir |  |
 | `despatchId` | string | Hayir | nullable |
 | `documentCurrencyCode` | string | Hayir | nullable |
 | `documentId` | string | Hayir | nullable |
+| `existingMicroDocument` | string | Hayir | nullable |
 | `invoiceId` | string | Hayir | nullable |
 | `invoiceLookupId` | string | Hayir | nullable |
 | `invoiceTypeCode` | string | Hayir | nullable |
@@ -7395,7 +7398,10 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `lines` | FurpaMerkezApi.Application.Modules.KasaIslemleri.ManavMalKabulVeEtiket.ManavMalKabulVeEtiketInvoiceLineDto[] | Hayir | nullable |
 | `matchedSupplierCode` | string | Hayir | nullable |
 | `matchedSupplierName` | string | Hayir | nullable |
+| `microTransferMessage` | string | Hayir | nullable |
 | `payableAmount` | number (double) | Hayir |  |
+| `suggestedDocumentOrderNo` | integer (int32) | Hayir | nullable |
+| `suggestedDocumentSeries` | string | Hayir | nullable |
 | `supplierTaxNo` | string | Hayir | nullable |
 | `supplierTitle` | string | Hayir | nullable |
 | `taxExclusiveAmount` | number (double) | Hayir |  |
@@ -12682,6 +12688,8 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `documentNo` | string | Hayir | minLength=0; maxLength=25; nullable |
 | `documentOrderNo` | integer (int32) | Hayir | min=0; max=2147483647; nullable |
 | `documentSeries` | string | Hayir | minLength=0; maxLength=25; nullable |
+| `invoiceDocumentId` | string | Hayir | minLength=0; maxLength=25; nullable |
+| `invoiceUuid` | string | Hayir | minLength=0; maxLength=50; nullable |
 | `lines` | FurpaMerkezApi.WebApi.Controllers.Modules.KasaIslemleri.ManavMalKabulVeEtiket.ManavMalKabulVeEtiketCreateMicroGoodsReceiptLineHttpRequest[] | Evet |  |
 | `markAcceptanceRecordsTransferred` | boolean | Hayir |  |
 | `mikroUserNo` | integer (int32) | Hayir | min=0; max=32767; nullable |
@@ -12708,7 +12716,7 @@ Enum degerleri JSON sozlesmesinde bulunur.
 | `caseCount` | integer (int32) | Hayir | nullable |
 | `caseTare` | number (double) | Hayir |  |
 | `caseType` | string | Evet | minLength=0; maxLength=20 |
-| `documentNo` | string | Evet | minLength=0; maxLength=25 |
+| `documentNo` | string | Hayir | minLength=0; maxLength=25; nullable |
 | `documentSeries` | string | Hayir | minLength=0; maxLength=25; nullable |
 | `grossWeight` | number (double) | Hayir |  |
 | `palletTare` | number (double) | Hayir | nullable |

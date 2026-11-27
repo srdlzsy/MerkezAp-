@@ -344,9 +344,8 @@ public sealed class SaveManavMalKabulVeEtiketAcceptanceRecordHttpRequest
     public string SupplierName { get; init; } = string.Empty;
 
     [StringLength(25)]
-    public string? DocumentSeries { get; init; } = "MNV";
+    public string? DocumentSeries { get; init; }
 
-    [Required]
     [StringLength(25)]
     public string? DocumentNo { get; init; }
 
@@ -424,6 +423,12 @@ public sealed class ManavMalKabulVeEtiketCreateMicroGoodsReceiptHttpRequest
     [StringLength(25)]
     public string? DocumentNo { get; init; }
 
+    [StringLength(50)]
+    public string? InvoiceUuid { get; init; }
+
+    [StringLength(25)]
+    public string? InvoiceDocumentId { get; init; }
+
     [Range(0, short.MaxValue)]
     public int? MikroUserNo { get; init; }
 
@@ -447,7 +452,9 @@ public sealed class ManavMalKabulVeEtiketCreateMicroGoodsReceiptHttpRequest
             MikroUserNo,
             Description,
             MarkAcceptanceRecordsTransferred,
-            Lines.Select(line => line.ToApplicationRequest()).ToArray());
+            Lines.Select(line => line.ToApplicationRequest()).ToArray(),
+            InvoiceUuid,
+            InvoiceDocumentId);
 }
 
 public sealed class ManavMalKabulVeEtiketCreateMicroGoodsReceiptLineHttpRequest

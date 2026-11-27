@@ -30,12 +30,17 @@ public sealed partial class ManavMalKabulVeEtiketService
             .FirstOrDefaultAsync(customer => customer.cari_kod == normalized.SupplierCode, cancellationToken)
             ?? throw new ArgumentException("Supplier was not found.", nameof(request.SupplierCode));
 
-        var documentSeries = normalized.DocumentSeries ?? "MNV";
-        var documentOrderNo = normalized.DocumentOrderNo
-                              ?? await GetNextMicroGoodsReceiptOrderNoAsync(documentSeries, cancellationToken);
-        var documentNo = NormalizeOrNull(normalized.DocumentNo) ?? documentOrderNo.ToString(CultureInfo.InvariantCulture);
+        await ThrowIfMicroInvoiceAlreadyExistsAsync(normalized, cancellationToken);
+        var identity = await ResolveMicroGoodsReceiptIdentityAsync(normalized, cancellationToken);
+        var documentSeries = identity.DocumentSeries;
+        var documentOrderNo = identity.DocumentOrderNo;
+        var documentNo = identity.DocumentNo;
         var createUserNo = Convert.ToInt16(normalized.MikroUserNo ?? DefaultMikroUserNo);
-        var offlineTraceKey = BuildOfflineTraceKey(normalized.Date, normalized.SupplierCode, documentSeries);
+        var offlineTraceKey = BuildOfflineTraceKey(
+            normalized.Date,
+            normalized.SupplierCode,
+            documentSeries,
+            documentOrderNo);
         var alternativeCurrencyRate = await GetAlternativeCurrencyRateAsync(normalized.Date, cancellationToken);
         var now = DateTime.Now;
         var temporaryInvoiceGuid = Guid.NewGuid();
@@ -44,6 +49,7 @@ public sealed partial class ManavMalKabulVeEtiketService
                 normalized,
                 line,
                 stockInfos[line.StockCode],
+                supplier.cari_odemeplan_no ?? 0,
                 temporaryInvoiceGuid,
                 documentSeries,
                 documentOrderNo,
@@ -249,17 +255,21 @@ public sealed partial class ManavMalKabulVeEtiketService
                     cha_evrak_tip = customer.cha_evrak_tip,
                     cha_evrakno_seri = customer.cha_evrakno_seri,
                     cha_evrakno_sira = customer.cha_evrakno_sira,
+                    cha_belge_no = customer.cha_belge_no,
+                    cha_belge_tarih = FormatMikroDate(customer.cha_belge_tarih),
                     cha_cari_cins = customer.cha_cari_cins,
                     cha_kod = customer.cha_kod,
                     cha_ciro_cari_kodu = customer.cha_ciro_cari_kodu,
                     cha_d_cins = customer.cha_d_cins,
                     cha_d_kur = customer.cha_d_kur,
-                    cha_d_kurtar = customer.cha_altd_kur,
+                    cha_altd_kur = customer.cha_altd_kur,
                     cha_tpoz = customer.cha_tpoz,
                     cha_kasa_hizkod = customer.cha_kasa_hizkod,
                     cha_kasa_hizmet = customer.cha_kasa_hizmet,
                     cha_miktari = customer.cha_miktari,
+                    cha_meblag = customer.cha_meblag,
                     cha_aratoplam = customer.cha_aratoplam,
+                    cha_vade = customer.cha_vade,
                     cha_vergipntr = customer.cha_vergipntr,
                     cha_ft_iskonto1 = customer.cha_ft_iskonto1,
                     cha_isk_mas1 = customer.cha_isk_mas1,
@@ -269,6 +279,27 @@ public sealed partial class ManavMalKabulVeEtiketService
                     cha_aciklama = customer.cha_aciklama,
                     cha_ebelge_turu = customer.cha_ebelge_turu,
                     cha_fatura_belge_turu = customer.cha_fatura_belge_turu,
+                    cha_uuid = customer.cha_uuid,
+                    cha_vergi1 = customer.cha_vergi1,
+                    cha_vergi2 = customer.cha_vergi2,
+                    cha_vergi3 = customer.cha_vergi3,
+                    cha_vergi4 = customer.cha_vergi4,
+                    cha_vergi5 = customer.cha_vergi5,
+                    cha_vergi6 = customer.cha_vergi6,
+                    cha_vergi7 = customer.cha_vergi7,
+                    cha_vergi8 = customer.cha_vergi8,
+                    cha_vergi9 = customer.cha_vergi9,
+                    cha_vergi10 = customer.cha_vergi10,
+                    cha_vergi11 = customer.cha_vergi11,
+                    cha_vergi12 = customer.cha_vergi12,
+                    cha_vergi13 = customer.cha_vergi13,
+                    cha_vergi14 = customer.cha_vergi14,
+                    cha_vergi15 = customer.cha_vergi15,
+                    cha_vergi16 = customer.cha_vergi16,
+                    cha_vergi17 = customer.cha_vergi17,
+                    cha_vergi18 = customer.cha_vergi18,
+                    cha_vergi19 = customer.cha_vergi19,
+                    cha_vergi20 = customer.cha_vergi20,
                     detay = rows.Select(row => new
                     {
                         sth_tarih = FormatMikroDate(row.sth_tarih),
@@ -278,10 +309,13 @@ public sealed partial class ManavMalKabulVeEtiketService
                         sth_evraktip = row.sth_evraktip,
                         sth_evrakno_seri = row.sth_evrakno_seri,
                         sth_evrakno_sira = row.sth_evrakno_sira,
+                        sth_belge_no = row.sth_belge_no,
+                        sth_belge_tarih = FormatMikroDate(row.sth_belge_tarih),
                         sth_stok_kod = row.sth_stok_kod,
                         sth_cari_cinsi = row.sth_cari_cinsi,
                         sth_cari_kodu = row.sth_cari_kodu,
                         sth_miktar = row.sth_miktar,
+                        sth_miktar2 = row.sth_miktar2,
                         sth_birim_pntr = row.sth_birim_pntr,
                         sth_tutar = row.sth_tutar,
                         sth_vergi_pntr = row.sth_vergi_pntr,
@@ -289,6 +323,7 @@ public sealed partial class ManavMalKabulVeEtiketService
                         sth_vergisiz_fl = row.sth_vergisiz_fl,
                         sth_iskonto1 = row.sth_iskonto1,
                         sth_iskonto2 = row.sth_iskonto2,
+                        sth_odeme_op = row.sth_odeme_op,
                         sth_giris_depo_no = row.sth_giris_depo_no,
                         sth_cikis_depo_no = row.sth_cikis_depo_no,
                         sth_stok_srm_merkezi = row.sth_stok_srm_merkezi,
